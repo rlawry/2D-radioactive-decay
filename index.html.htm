@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>Radioactive Decay</title>
+
+  <!-- Nuclide data (must define `nuclides`) -->
+  <script src="nuclides.js"></script>
+
+  <style>
+    :root {
+      --bg: #ffffff;
+      --border: #000000;
+      --accent: #00dac8;
+      --danger: #782200;
+      --purple: #bb00ff;
+      --yellow: #ffd600;
+      --text: #111111;
+      --control-bg: #f0f0f0;
+      --modal-backdrop: rgba(0, 0, 0, 0.4);
+      --radius: 6px;
+      --transition-fast: 0.2s;
+      --font-main: Arial, Helvetica, sans-serif;
+    }
+
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-main);
+      font-size: 16px;
+      font-weight: 400;
+    }
+
+    h1 {
+      margin: 16px auto 8px;
+      padding: 6px 12px;
+      max-width: 900px;
+      text-align: center;
+      font-size: 24px;
+      font-weight: 700;
+      border-radius: var(--radius);
+      box-shadow: inset 0 0 10px #1e90ff;
+      background-color: #ffffff;
+    }
+
+    #total {
+      max-width: 1000px;
+      margin: 0 auto 24px;
+      padding: 0 12px 24px;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    #canvas {
+      position: relative;
+      margin: 0;
+      padding: 0;
+      border: 1px solid var(--border);
+      background-color: #aaaaaa;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    #cv {
+      display: block;
+      width: 100%;
+      /* scales down on small screens */
+      height: auto;
+      /* keeps aspect ratio */
+      border: 1px solid #1e90ff;
+    }
+
+    .control-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      align-items: center;
+      /* center horizontally */
+      justify-content: center;
+      padding: 10px 12px;
+      background: var(--control-bg);
+      border-bottom: 1px solid #cccccc;
+      text-align: center;
+    }
+
+    .control-panel>div {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .control-panel .pos1 {
+      margin-right: 0;
+      white-space: nowrap;
+      position: static;
+    }
+
+
+    .control-panel input[type="number"] {
+      margin-left: 6px;
+      padding: 2px 4px;
+      width: 90px;
+      height: 22px;
+      text-align: right;
+      font-size: 12px;
+    }
+
+    button {
+      border: none;
+      background: #000000;
+      color: #ffffff;
+      text-align: center;
+      width: 180px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 14px;
+      margin: 4px 4px 0 0;
+      text-transform: uppercase;
+      border-radius: var(--radius);
+      box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.9);
+      display: inline-block;
+      cursor: pointer;
+      transition:
+        background var(--transition-fast),
+        transform var(--transition-fast),
+        box-shadow var(--transition-fast),
+        letter-spacing var(--transition-fast),
+        color var(--transition-fast);
+    }
+
+    button:hover {
+      background: #ffffff;
+      color: #000000;
+      letter-spacing: 1px;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+      transform: translateY(-1px);
+    }
+
+    button:active {
+      transform: translateY(0);
+      box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.8);
+    }
+
+    button.start {
+      background: var(--accent);
+      color: #000000;
+    }
+
+    button.reset {
+      background: var(--danger);
+    }
+
+    button.nuclides {
+      background: var(--yellow);
+      color: #000000;
+      width: 260px;
+    }
+
+    button.show-ideal {
+      background: var(--purple);
+      width: auto;
+    }
+
+    #graph {
+      position: relative;
+      /* starts centered under canvas */
+      margin: 12px auto 0;
+      width: 100%;
+      max-width: 600px;
+      height: 260px;
+      border: 1px solid var(--border);
+      background: linear-gradient(to right,
+          #ffffff,
+          rgba(119, 255, 56, 0.25),
+          #ffffff);
+      z-index: 9;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    #graphheader {
+      padding: 4px 8px;
+      text-align: center;
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(0, 0, 0, 0.05);
+      cursor: move;
+      user-select: none;
+    }
+
+    #graph-cv {
+      flex: 1;
+      display: block;
+      margin: 0 auto;
+    }
+
+    #graph .graph-button-wrapper {
+      text-align: center;
+      padding: 2px 0 4px;
+    }
+
+    /* Modal */
+
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 20;
+      inset: 0;
+      background-color: var(--modal-backdrop);
+      text-align: center;
+    }
+
+    .modal-content {
+      background-color: #7059f5;
+      color: #ffffff;
+      margin: 160px auto 0;
+      padding: 8px 10px 10px;
+      border-radius: var(--radius);
+      width: 520px;
+      max-width: 90vw;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+    }
+
+    .row {
+      display: flex;
+      margin-top: 4px;
+    }
+
+    .nuclide-list,
+    .half-life-list {
+      background-color: #ffffff;
+      color: #000000;
+      margin: 0;
+      padding: 4px 6px;
+      min-height: 80px;
+      width: 50%;
+      font-size: 14px;
+      text-align: left;
+      overflow-y: auto;
+    }
+
+    .half-life-list {
+      text-align: right;
+    }
+
+    .close {
+      color: #ffb3b3;
+      float: right;
+      margin-right: 4px;
+      font-size: 18px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .close:hover,
+    .close:focus {
+      color: #000000;
+    }
+
+    @media (max-width: 900px) {
+      #total {
+        max-width: 100%;
+        padding: 0 8px 16px;
+      }
+
+      #canvas {
+        max-width: 100%;
+      }
+
+      #graph {
+        position: static;
+        margin: 8px auto 0;
+        width: 100%;
+      }
+
+      #cv {
+        height: 480px;
+      }
+
+      button {
+        width: auto;
+        min-width: 120px;
+      }
+
+      .control-panel {
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Radioactive Decay</h1>
+
+  <div id="total">
+
+    <div id="canvas">
+      <div class="control-panel">
+        <div>
+          <span class="pos1">
+            <input type="number" id="HalfLife" value="10">
+            Half life (seconds)
+          </span>
+          <span class="pos1">
+            <input type="number" id="gridX" value="20">
+            Grid Size (horizontal)
+          </span>
+          <span class="pos1">
+            <input type="number" id="gridY" value="20">
+            Grid Size (vertical)
+          </span>
+        </div>
+        <div>
+          <button id="bu2" class="start">Start</button>
+          <button id="bu1" class="reset">Reset</button>
+          <button id="bu4" class="nuclides">Nuclides with Similar HL</button>
+        </div>
+      </div>
+
+      <canvas id="cv" width="960" height="480">
+        This browser doesn't support HTML5 canvas!
+      </canvas>
+    </div>
+
+    <div id="graph">
+      <div id="graphheader">The Graph</div>
+      <canvas id="graph-cv" width="597" height="220">
+        This browser doesn't support HTML5 canvas!
+      </canvas>
+      <div class="graph-button-wrapper">
+        <button id="bu3" class="show-ideal">Show Ideal Decay Plot</button>
+      </div>
+    </div>
+
+    <div class="modal" id="nucModal">
+      <div class="modal-content">
+        <span class="closeNuc close">&times;</span>
+        <span>Nuclides with Similar Half-Life</span>
+        <div class="row">
+          <div class="nuclide-list"></div>
+          <div class="half-life-list"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    var colorBackground = "rgba(200,200,200,1)";
+    var colorActive = "#ff0000";
+    var colorGradActive;
+    var colorDecayed = "#000000";
+    var colorTime = "#0000ff";
+
+    var FONT1 = "normal normal bold 12px sans-serif";
+    var halfLife = 20;
+    var AtomTotal = 400;
+    var xAtoms = 20;
+    var yAtoms = 20;
+    var atomRadius = 5;
+    var graphXPos = 50, graphYPos = 0;
+    var graphXIncrement = 40;
+    var graphYIncrement = 100;
+    var textXPos = 10, textYPos = 20;
+    var graphXLength = 420;
+    var graphTotalHalfLives = Math.floor(graphXLength / graphXIncrement);
+    var atomXPos = 50;
+    var atomYPos = 30;
+    var timeText = "None.";
+    var timeElapsed = 0;
+    var spacing = 15;
+    var graphScale = 1.2;
+
+    var canvas, ctx, graphCanvas, graphCtx;
+    var bu1, bu2, bu3;
+    var on;
+    var t0;
+    var timer;
+    var timeVariable;
+    var timeDecay;
+    var decayed;
+    var number;
+    var xyDiagram;
+
+    var text01 = "Reset";
+    var text02 = ["Start", "Pause", "Resume"];
+    var text03 = "Show Ideal Decay Plot";
+
+    var text04 = "Half Lives:";
+    var text05 = "Not yet decayed:";
+    var text06 = "Already decayed:";
+    var text07 = ["nuclei", "nucleus", "nuclei", "nuclei"];
+    var text08 = "Actual time elapsed:";
+    var text09 = ["milliseconds", "seconds", "minutes", "hours", "days", "weeks", "months", "years"];
+
+    var decimalSeparator = ".";
+    var symbolHalfLife = "T";
+    var symbolQuotient = "N/N_0";
+
+    var particles = [];
+    var animFrameId = null;
+
+    function getNucleusPosition(i) {
+      return {
+        x: atomXPos + spacing * (i % xAtoms),
+        y: atomYPos + spacing * Math.floor(i / xAtoms)
+      };
+    }
+
+    function spawnParticle(x, y) {
+      var angle = Math.random() * Math.PI * 2;
+      var speed = 260 + Math.random() * 60;      // slightly slower for smoother arcs
+      var life = 4 + Math.random() * 2;          // 4–6 seconds total visible time
+
+      particles.push({
+        x: x,
+        y: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: life,
+        maxLife: life,
+        history: [],
+        historyMax: 80                           // long trail (tune if needed)
+      });
+    }
+
+    function updateParticles(dt) {
+      if (dt <= 0) return;
+
+      for (var i = particles.length - 1; i >= 0; i--) {
+        var p = particles[i];
+
+        p.life -= dt;
+        if (p.life <= 0) {
+          particles.splice(i, 1);
+          continue;
+        }
+
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+
+        p.history.push({ x: p.x, y: p.y });
+        if (p.history.length > p.historyMax) {
+          p.history.shift();
+        }
+      }
+    }
+
+    function renderParticles() {
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        var lifeFactor = p.life / p.maxLife; // 1 -> 0 over lifetime
+        var history = p.history;
+        var len = history.length;
+
+        if (len === 0) continue;
+
+        // Tail (oldest) at j=0 -> faint
+        // Head (newest) at j=len-1 -> bright
+        for (var j = 0; j < len; j++) {
+          var h = history[j];
+
+          var t = j / (len - 1 || 1);          // 0 at tail, 1 at head
+          var alpha = lifeFactor * t * 0.9;    // fade with both age and life
+          if (alpha <= 0.02) continue;
+
+          var radius = 1 + 2 * t;              // slightly larger near head
+
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(0,218,200," + alpha + ")";
+          ctx.arc(h.x, h.y, radius, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+
+        // Extra head sparkle at current position
+        var headAlpha = lifeFactor;
+        if (headAlpha > 0.05) {
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(255,255,255," + headAlpha + ")";
+          ctx.arc(p.x, p.y, 2.4, 0, 2 * Math.PI);
+          ctx.fill();
+        }
+      }
+    }
+    function renderAtomsAndParticles() {
+      ctx.fillStyle = colorBackground;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.font = FONT1;
+
+      for (var i = 0; i < AtomTotal; i++) {
+        var c = decayed[i] ? colorDecayed : colorActive;
+        drawNucleus(i, c);
+      }
+
+      renderParticles();
+    }
+
+    function getElement(id, text) {
+      var e = document.getElementById(id);
+      if (text) e.innerHTML = text;
+      return e;
+    }
+
+    function addWheelIncrement(input, step, min, max) {
+      if (!input) return;
+      input.addEventListener("wheel", function (event) {
+        event.preventDefault();
+
+        var value = parseInt(input.value, 10);
+        if (!Number.isFinite(value)) value = min;
+
+        if (event.deltaY < 0) {
+          value += step;              // scroll up -> increase
+        } else if (event.deltaY > 0) {
+          value -= step;              // scroll down -> decrease
+        }
+
+        if (value < min) value = min;
+        if (max && value > max) value = max;
+
+        input.value = value;
+
+        // Rebuild atoms and graph with new grid
+        reactionReset();
+      }, { passive: false });
+    }
+
+
+    function start() {
+      canvas = getElement("cv");
+      graphCanvas = getElement("graph-cv");
+      ctx = canvas.getContext("2d");
+      graphCtx = graphCanvas.getContext("2d");
+      textXPos = 230;
+
+      bu1 = getElement("bu1", text01);
+      bu2 = getElement("bu2");
+      bu3 = getElement("bu3", text03);
+
+      setButton2State(0);
+
+      // wheel on grid inputs
+      addWheelIncrement(document.getElementById("gridX"), 1, 1, 300);
+      addWheelIncrement(document.getElementById("gridY"), 1, 1, 300);
+
+      reset();
+      paintAtoms();
+      writeValues();
+
+      bu1.onclick = reactionReset;
+      bu2.onclick = reactionStart;
+      bu3.onclick = reactionDiagram;
+    }
+
+    function setButton2State(st) {
+      bu2.state = st;
+      bu2.innerHTML = text02[st];
+      bu2.classList.toggle("start", st === 0 || st === 2);
+    }
+
+    function switchButton2() {
+      var st = bu2.state;
+      if (st === 0) st = 1;
+      else st = 3 - st;
+      setButton2State(st);
+    }
+
+    function reactionReset() {
+      setButton2State(0);
+      stopAnimation();
+      reset();
+      paintAtoms();
+      writeValues();
+    }
+
+    function reactionStart() {
+      switchButton2();
+      if (bu2.state === 1) startAnimation();
+      else stopAnimation();
+      if (bu2.state === 2) savePoint();
+      // optional: one immediate update on click
+      paintSimulation(0);
+    }
+
+    function reactionDiagram() {
+      drawDecayLine();
+    }
+
+    function startAnimation() {
+      if (on) return;
+      on = true;
+      t0 = performance.now();
+      animFrameId = requestAnimationFrame(animationStep);
+    }
+
+    function animationStep(now) {
+      if (!on) return;
+
+      var dt = (now - t0) / 1000;  // ms -> s
+      t0 = now;
+
+      // Clamp dt to avoid jumps if tab was inactive
+      if (dt < 0) dt = 0;
+      if (dt > 0.1) dt = 0.1;
+
+      paintSimulation(dt);
+      animFrameId = requestAnimationFrame(animationStep);
+    }
+
+    function stopAnimation() {
+      on = false;
+      if (animFrameId != null) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+    }
+
+    function savePoint() {
+      if (timeVariable > 150) return;
+      var n = xyDiagram.length;
+      xyDiagram[n] = {
+        x: Math.round(graphXPos + timeVariable / halfLife * graphXIncrement),
+        y: Math.round(graphYPos - number / AtomTotal * graphYIncrement)
+      };
+    }
+
+    function reset() {
+      var halfLifeInput = parseFloat(document.getElementById("HalfLife").value);
+      var xInput = parseInt(document.getElementById("gridX").value, 10);
+      var yInput = parseInt(document.getElementById("gridY").value, 10);
+
+      halfLife = (isFinite(halfLifeInput) && halfLifeInput > 0) ? halfLifeInput : 10;
+      xAtoms = (isFinite(xInput) && xInput > 0) ? xInput : 20;
+      yAtoms = (isFinite(yInput) && yInput > 0) ? yInput : 20;
+
+      AtomTotal = xAtoms * yAtoms;
+
+      atomXPos = canvas.width / 2 - (xAtoms - 1) * spacing / 2;
+      graphYPos = yAtoms * 8 - 10;
+      textYPos = 30;
+
+      var randNr;
+      var f = -halfLife / Math.LN2;
+
+      on = false;
+      timeVariable = 0;
+      timeDecay = new Array(AtomTotal);
+      decayed = new Array(AtomTotal);
+      number = AtomTotal;
+      xyDiagram = [];
+      particles = [];
+      savePoint();
+
+      for (var i = 0; i < AtomTotal; i++) {
+        do {
+          randNr = Math.random();
+        } while (randNr === 0 || randNr === 1);
+        timeDecay[i] = f * Math.log(randNr);
+        decayed[i] = false;
+      }
+
+      if (yAtoms * spacing > canvas.height - 50) {
+        canvas.height = 100 + spacing * yAtoms;
+      }
+    }
+
+    function newPath() {
+      ctx.beginPath();
+      ctx.strokeStyle = "#000000";
+      ctx.lineWidth = 1;
+    }
+
+    function line(x1, y1, x2, y2, c) {
+      graphCtx.beginPath();
+      if (c) graphCtx.strokeStyle = c;
+      graphCtx.moveTo(x1, y1);
+      graphCtx.lineTo(x2, y2);
+      graphCtx.stroke();
+      graphCtx.closePath();
+    }
+
+    function arrow(x1, y1, x2, y2, w) {
+      graphCtx.strokeStyle = "black";
+      graphCtx.fillStyle = "black";
+      if (!w) w = 1;
+      var dx = x2 - x1, dy = y2 - y1;
+      var length = Math.sqrt(dx * dx + dy * dy);
+      if (length === 0) return;
+      dx /= length; dy /= length;
+      var s = 2.5 * w + 7.5;
+      var xSp = x2 - s * dx, ySp = y2 - s * dy;
+      var h = 0.5 * w + 3.5;
+      var xSp1 = xSp - h * dy, ySp1 = ySp + h * dx;
+      var xSp2 = xSp + h * dy, ySp2 = ySp - h * dx;
+      xSp = x2 - 0.6 * s * dx; ySp = y2 - 0.6 * s * dy;
+
+      graphCtx.beginPath();
+      graphCtx.lineWidth = w;
+      graphCtx.moveTo(x1, y1);
+      if (length < 5) graphCtx.lineTo(x2, y2);
+      else graphCtx.lineTo(xSp, ySp);
+      graphCtx.stroke();
+
+      if (length < 5) return;
+      graphCtx.beginPath();
+      graphCtx.lineWidth = 1;
+      graphCtx.moveTo(xSp, ySp);
+      graphCtx.lineTo(xSp1, ySp1);
+      graphCtx.lineTo(x2, y2);
+      graphCtx.lineTo(xSp2, ySp2);
+      graphCtx.closePath();
+      graphCtx.fill();
+    }
+
+    function circle(x, y, r, c) {
+      if (c) ctx.fillStyle = c;
+      newPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI, true);
+      ctx.fill();
+    }
+
+    function writePercent(s, x, y) {
+      s = s.replace(".", decimalSeparator);
+      write(s, x - 17, y, "right");
+      write("%", x - 15, y, "left");
+    }
+
+    function writeTextIndex(s, x, y) {
+      var s1 = s;
+      var i = s1.indexOf("_");
+      if (i >= 0) s1 = s.substring(0, i);
+      var s2 = "";
+      if (i >= 0) s2 = s.substring(i + 1);
+      var l1 = graphCtx.measureText(s1).width;
+      write(s1, x, y, "left");
+      if (i >= 0) write(s2, x + l1, y + 5);
+    }
+
+    function drawGraph() {
+      graphCanvas = getElement("graph-cv");
+      graphXPos = 50;
+      graphYPos = 150;
+
+      graphCtx.clearRect(0, 0, graphCanvas.width, graphCanvas.height);
+      graphCtx.beginPath();
+      graphCtx.textAlign = "center";
+      graphCtx.strokeStyle = "black";
+
+      arrow(graphXPos - 10, graphYPos, graphXPos + graphXLength * graphScale, graphYPos);
+      graphCtx.fillText("Time", graphXPos + 215, graphYPos + 33);
+
+      for (var i = 1; i <= graphTotalHalfLives; i++) {
+        var xT = graphXPos + i * graphXIncrement;
+        line(xT, graphYPos + 3, xT, graphYPos - 3);
+        var s = (i > 1 ? "" + i + "T" : "T");
+        graphCtx.fillText(s, xT, graphYPos + 15);
+      }
+
+      arrow(graphXPos, graphYPos + 10, graphXPos, graphYPos - 125 * graphScale);
+
+      for (var k = 0; k <= 4; k++) {
+        var y0 = graphYPos - graphYIncrement * Math.pow(2, -k);
+        line(graphXPos - 3, y0, graphXPos + 3, y0, "black");
+      }
+
+      writeTextIndex(symbolQuotient, graphXPos - 30, graphYPos - 115);
+      writePercent("100", graphXPos, graphYPos - 95);
+      writePercent("50", graphXPos, graphYPos - 45);
+      writePercent("25", graphXPos, graphYPos - 20);
+      writePercent("12.5", graphXPos, graphYPos - 8);
+    }
+
+    function drawNucleus(i, c) {
+      var pos = getNucleusPosition(i);
+      var x = pos.x;
+      var y = pos.y;
+
+      if (c === colorDecayed) {
+        // decayed: black square
+        ctx.fillStyle = colorDecayed;
+        ctx.fillRect(x - atomRadius, y - atomRadius, atomRadius * 2, atomRadius * 2);
+      } else {
+        // active: solid red circle
+        ctx.fillStyle = colorActive;
+        ctx.beginPath();
+        ctx.arc(x, y, atomRadius, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    function paintAtoms() {
+      renderAtomsAndParticles();
+
+      graphCtx.fillStyle = colorBackground;
+      graphCtx.fillRect(0, 0, graphCanvas.width, graphCanvas.height);
+      graphCtx.font = FONT1;
+
+      drawGraph();
+    }
+
+    function drawDecayLine() {
+      graphCtx.beginPath();
+      graphCtx.strokeStyle = "blue";
+
+      var xx = graphXPos;
+      var yy = graphYPos - graphYIncrement;
+      graphCtx.moveTo(xx, yy);
+
+      while (xx < graphXPos + 300) {
+        xx++;
+        yy = graphYPos - graphYIncrement *
+          Math.exp(-(xx - graphXPos) / graphXIncrement * Math.LN2);
+        graphCtx.lineTo(xx, yy);
+      }
+      graphCtx.stroke();
+      graphCtx.closePath();
+      graphCtx.strokeStyle = "black";
+    }
+
+    function write(s, x, y, a) {
+      if (a) graphCtx.textAlign = a;
+      graphCtx.fillText(s, x, y);
+    }
+
+    function textNuclei(n) {
+      if (n === 0) return text07[0];
+      if (n === 1) return text07[1];
+      if (n === 2) return text07[2];
+      return text07[3];
+    }
+
+    function writeValues() {
+      graphCtx.fillStyle = colorBackground;
+      graphCtx.fillRect(textXPos, textYPos, 280, 77);
+
+      var x1 = textXPos + 190;
+      var x2 = textXPos + 200;
+      var y1 = textYPos + 10;
+      var y2 = textYPos + 30;
+      var y3 = textYPos + 50;
+      var y4 = textYPos + 70;
+
+      graphCtx.fillStyle = colorTime;
+
+      write(text04, textXPos, y1, "left");
+      var s = Number(timeVariable / halfLife).toFixed(2);
+      var s1 = timeVariable;
+      s = s.replace(".", decimalSeparator);
+      write(s, x1, y1, "right");
+      write(symbolHalfLife, x2, y1, "left");
+
+      graphCtx.fillStyle = colorActive;
+      write(text05, textXPos, y2);
+      write(String(number), x1, y2, "right");
+      write(textNuclei(number), x2, y2, "left");
+
+      graphCtx.fillStyle = colorDecayed;
+      write(text06, textXPos, y3);
+      var nd = AtomTotal - number;
+      write(String(nd), x1, y3, "right");
+      write(textNuclei(nd), x2, y3, "left");
+
+      setTimeText(s1);
+      graphCtx.fillStyle = colorTime;
+      write(text08, textXPos, y4);
+      var sElapsed = Number(timeElapsed).toFixed(2)
+        .replace(".", decimalSeparator);
+      write(sElapsed, x1, y4, "right");
+      write(timeText, x2, y4, "left");
+      graphCtx.fillStyle = "black";
+    }
+
+    function setTimeText(timeNum) {
+      if (timeNum < 1) {
+        timeText = text09[0];
+        timeElapsed = timeNum;
+      } else if (timeNum < 60) {
+        timeText = text09[1];
+        timeElapsed = timeNum;
+      } else if (timeNum < 3600) {
+        timeText = text09[2];
+        timeElapsed = timeNum / 60;
+      } else if (timeNum < 86400) {
+        timeText = text09[3];
+        timeElapsed = timeNum / 3600;
+      } else if (timeNum < 604800) {
+        timeText = text09[4];
+        timeElapsed = timeNum / 86400;
+      } else if (timeNum <= 2449440) {
+        timeText = text09[5];
+        timeElapsed = timeNum / 604800;
+      } else if (timeNum <= 31536000) {
+        timeText = text09[6];
+        timeElapsed = timeNum / 2449440;
+      } else {
+        timeText = text09[7];
+        timeElapsed = timeNum / 31536000;
+      }
+    }
+
+    function paintSimulation(dt) {
+      // dt is seconds between frames
+      dt = dt || 0;
+
+      if (on && dt > 0) {
+        timeVariable += dt;
+      }
+
+      // Handle decays and spawn particles
+      for (var i = 0; i < AtomTotal; i++) {
+        if (decayed[i]) continue;
+        if (timeVariable < timeDecay[i]) continue;
+
+        decayed[i] = true;
+        number--;
+
+        var pos = getNucleusPosition(i);
+        spawnParticle(pos.x, pos.y);
+      }
+
+      // Update particle motion and lifetimes
+      updateParticles(dt);
+
+      // Redraw atoms + particle effects
+      renderAtomsAndParticles();
+
+      // Text / counts / graph points
+      writeValues();
+
+      graphCtx.fillStyle = "black";
+      for (var j = 0; j < xyDiagram.length; j++) {
+        var p = xyDiagram[j];
+        graphCtx.fillRect(p.x - 2, p.y - 2, 4, 4);
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", start, false);
+
+    // Nuclides modal
+
+    var nucModal = document.getElementById("nucModal");
+    var bu4 = document.getElementById("bu4");
+    var nucSpan = document.getElementsByClassName("closeNuc")[0];
+
+    bu4.onclick = function () {
+      var halfLifeVal = parseFloat(document.getElementById("HalfLife").value);
+      if (!isFinite(halfLifeVal) || halfLifeVal <= 0) return;
+
+      var nuclist = document.querySelector(".nuclide-list");
+      var halflist = document.querySelector(".half-life-list");
+      nuclist.innerHTML = "";
+      halflist.innerHTML = "";
+
+      for (var i = 0; i < (nuclides.nuclides || []).length; i++) {
+        var nuc = nuclides.nuclides[i];
+        var nucHalfLife = nuc["half-life"];
+        if (!nucHalfLife || nucHalfLife <= 0) continue;
+
+        if (Math.abs(Math.log(halfLifeVal) - Math.log(nucHalfLife)) <= 1) {
+          nuclist.innerHTML += "<p>" + nuc.name + ":</p>";
+          halflist.innerHTML += "<p>" + numberWithCommas(nucHalfLife) + " s</p>";
+        }
+      }
+      nucModal.style.display = "block";
+    };
+
+    nucSpan.onclick = function () {
+      nucModal.style.display = "none";
+    };
+
+    window.onclick = function (event) {
+      if (event.target === nucModal) {
+        nucModal.style.display = "none";
+      }
+    };
+
+    makeDraggable(document.getElementById("graph"));
+
+    function makeDraggable(el) {
+      if (!el) return;
+
+      var handle = document.getElementById(el.id + "header") || el;
+      var offsetX = 0;
+      var offsetY = 0;
+      var containerRect = null;
+
+      handle.addEventListener("mousedown", onMouseDown);
+
+      function onMouseDown(e) {
+        e.preventDefault();
+
+        var container = document.getElementById("total") || document.body;
+        containerRect = container.getBoundingClientRect();
+        var rect = el.getBoundingClientRect();
+
+        // Distance from cursor to element's top-left corner
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+
+        // Lock current position relative to container
+        el.style.position = "absolute";
+        el.style.left = (rect.left - containerRect.left) + "px";
+        el.style.top = (rect.top - containerRect.top) + "px";
+        el.style.right = "auto";
+        el.style.bottom = "auto";
+        el.style.margin = "0";
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      }
+
+      function onMouseMove(e) {
+        e.preventDefault();
+        var x = e.clientX - containerRect.left - offsetX;
+        var y = e.clientY - containerRect.top - offsetY;
+
+        // Optional: constrain inside container
+        var maxX = containerRect.width - el.offsetWidth;
+        var maxY = containerRect.height - el.offsetHeight;
+        if (x < 0) x = 0;
+        if (y < 0) y = 0;
+        if (x > maxX) x = maxX;
+        if (y > maxY) y = maxY;
+
+        el.style.left = x + "px";
+        el.style.top = y + "px";
+      }
+
+      function onMouseUp() {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      }
+    }
+
+    function numberWithCommas(x) {
+      x = Number(x);
+      if (!Number.isFinite(x)) return "";
+      if (x >= 1) {
+        return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      }
+      if (x > 0 && x < 1) {
+        var parts = x.toString().split(".");
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+        return parts.join(".");
+      }
+      return x.toString();
+    }
+  </script>
+</body>
+
+</html>
