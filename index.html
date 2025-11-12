@@ -367,6 +367,8 @@
     var colorDecayed = "#000000";
     var colorTime = "#0000ff";
 
+    var prevHalfLife = null;   // for palette changes
+
     var FONT1 = "normal normal bold 12px sans-serif";
     var halfLife = 20;
     var AtomTotal = 400;
@@ -424,7 +426,7 @@
 
     function spawnParticle(x, y) {
       var angle = Math.random() * Math.PI * 2;
-      var speed = 260 + Math.random() * 60;      // slightly slower for smoother arcs
+      var speed = 660 + Math.random() * 60;      // slightly slower for smoother arcs
       var life = 4 + Math.random() * 2;          // 4–6 seconds total visible time
 
       particles.push({
@@ -435,7 +437,7 @@
         life: life,
         maxLife: life,
         history: [],
-        historyMax: 80                           // long trail (tune if needed)
+        historyMax: 90                           // long trail (tune if needed)
       });
     }
 
@@ -639,14 +641,35 @@
       };
     }
 
+    function setRandomPalette() {
+      // base hue 0–359
+      var baseHue = Math.floor(Math.random() * 360);
+
+      // active: bright
+      var activeHue = baseHue;
+      // decayed: opposite hue, darker
+      var decayedHue = (baseHue + 180) % 360;
+
+      colorActive = "hsl(" + activeHue + ", 90%, 55%)";
+      colorDecayed = "hsl(" + decayedHue + ", 90%, 30%)";
+    }
+
     function reset() {
       var halfLifeInput = parseFloat(document.getElementById("HalfLife").value);
       var xInput = parseInt(document.getElementById("gridX").value, 10);
       var yInput = parseInt(document.getElementById("gridY").value, 10);
 
-      halfLife = (isFinite(halfLifeInput) && halfLifeInput > 0) ? halfLifeInput : 10;
+      var newHalfLife = (isFinite(halfLifeInput) && halfLifeInput > 0) ? halfLifeInput : 10;
+      halfLife = newHalfLife;
+
       xAtoms = (isFinite(xInput) && xInput > 0) ? xInput : 20;
       yAtoms = (isFinite(yInput) && yInput > 0) ? yInput : 20;
+
+      // Change colors on first load or whenever half-life is changed
+      if (prevHalfLife === null || newHalfLife !== prevHalfLife) {
+        setRandomPalette();
+        prevHalfLife = newHalfLife;
+      }
 
       AtomTotal = xAtoms * yAtoms;
 
@@ -678,6 +701,7 @@
         canvas.height = 100 + spacing * yAtoms;
       }
     }
+
 
     function newPath() {
       ctx.beginPath();
@@ -729,9 +753,13 @@
 
     function circle(x, y, r, c) {
       if (c) ctx.fillStyle = c;
+      ctx.strokeStyle = "black";
       newPath();
       ctx.arc(x, y, r, 0, 2 * Math.PI, true);
       ctx.fill();
+      newPath();
+      ctx.arc(x, y, r, 0, 2 * Math.PI, true);
+      ctx.stroke();
     }
 
     function writePercent(s, x, y) {
@@ -798,8 +826,10 @@
         // active: solid red circle
         ctx.fillStyle = colorActive;
         ctx.beginPath();
+        ctx.strokeStyle = "black";
         ctx.arc(x, y, atomRadius, 0, 2 * Math.PI);
         ctx.fill();
+        ctx.stroke();
       }
     }
 
