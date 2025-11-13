@@ -483,18 +483,22 @@
     function updateParticles(dt) {
       if (dt <= 0) return;
 
-      for (let i = particles.length - 1; i >= 0; i--) {
-        const p = particles[i];
+      var w = canvas.width, h = canvas.height, margin = 24;
+
+      for (var i = particles.length - 1; i >= 0; i--) {
+        var p = particles[i];
         p.age += dt;
         p.life -= dt;
+
         if (p.life <= 0) { particles.splice(i, 1); continue; }
 
-        // Off-screen cull once the visible segment is entirely outside
-        const currentLen = Math.min(p.speed * p.age, p.length);
-        const tipIndex = Math.max(1, Math.floor(currentLen / p.spacing));
-        const a = p.points[0];
-        const b = p.points[Math.min(tipIndex, p.points.length - 1)];
-        if (segmentOffscreen(a.x, a.y, b.x, b.y, 12, canvas.width, canvas.height)) {
+        // current tip position along the ray
+        var tipLen = Math.min(p.speed * p.age, p.length);
+        var tx = p.x0 + p.dx * tipLen;
+        var ty = p.y0 + p.dy * tipLen;
+
+        // If the track is complete OR the head is well off-screen, drop it
+        if (tipLen >= p.length || tx < -margin || tx > w + margin || ty < -margin || ty > h + margin) {
           particles.splice(i, 1);
         }
       }
@@ -505,68 +509,68 @@
       return x - Math.floor(x);
     }
 
-function renderParticles() {
-  for (var i = 0; i < particles.length; i++) {
-    var p = particles[i];
-    var lifeFactor = p.life / p.maxLife;
-    if (lifeFactor <= 0) continue;
+    function renderParticles() {
+      for (var i = 0; i < particles.length; i++) {
+        var p = particles[i];
+        var lifeFactor = p.life / p.maxLife;
+        if (lifeFactor <= 0) continue;
 
-    // Visible portion of the ray at this time
-    var currentLen = Math.min(p.speed * p.age, p.length);
-    if (currentLen <= 0) continue;
+        // Visible portion of the ray at this time
+        var currentLen = Math.min(p.speed * p.age, p.length);
+        if (currentLen <= 0) continue;
 
-    // Uniform fade of the whole track as time passes
-    var alphaTrack = Math.max(0, Math.min(1, lifeFactor)) * 0.9;
+        // Uniform fade of the whole track as time passes
+        var alphaTrack = Math.max(0, Math.min(1, lifeFactor)) * 0.9;
 
-    if (showCloudChamber) {
-      // Densified shimmer along the ray (no history)
-      var segments = 100;                     // resolution
-      var step = currentLen / segments;
-      var perp = Math.atan2(p.dy, p.dx) + Math.PI / 2;
+        if (showCloudChamber) {
+          // Densified shimmer along the ray (no history)
+          var segments = 100;                     // resolution
+          var step = currentLen / segments;
+          var perp = Math.atan2(p.dy, p.dx) + Math.PI / 2;
 
-      for (var s = 0; s <= currentLen; s += step) {
-        var t = s / (p.length || 1);         // 0..1 along full planned length
+          for (var s = 0; s <= currentLen; s += step) {
+            var t = s / (p.length || 1);         // 0..1 along full planned length
 
-        var baseX = p.x0 + p.dx * s;
-        var baseY = p.y0 + p.dy * s;
+            var baseX = p.x0 + p.dx * s;
+            var baseY = p.y0 + p.dy * s;
 
-        // Tight perpendicular jitter band → cloud-chamber look
-        var seed = i * 997 + Math.floor(t * 977);
-        var jitterMag = 1.5 + 2.5 * prand(seed);          // narrow band
-        var jitter = (prand(seed + 1) - 0.5) * 2 * jitterMag;
+            // Tight perpendicular jitter band → cloud-chamber look
+            var seed = i * 997 + Math.floor(t * 977);
+            var jitterMag = 1.5 + 2.5 * prand(seed);          // narrow band
+            var jitter = (prand(seed + 1) - 0.5) * 2 * jitterMag;
 
-        var cx = baseX + Math.cos(perp) * jitter;
-        var cy = baseY + Math.sin(perp) * jitter;
+            var cx = baseX + Math.cos(perp) * jitter;
+            var cy = baseY + Math.sin(perp) * jitter;
 
-        // A few specks per sample to avoid gaps (uniform alpha)
-        var specks = 3;
-        for (var k = 0; k < specks; k++) {
-          var sSeed = seed + k * 37;
-          var r = 1.0 + 1.2 * prand(sSeed + 1);
+            // A few specks per sample to avoid gaps (uniform alpha)
+            var specks = 3;
+            for (var k = 0; k < specks; k++) {
+              var sSeed = seed + k * 37;
+              var r = 1.0 + 1.2 * prand(sSeed + 1);
 
-          ctx.beginPath();
-          ctx.fillStyle = "rgba(0,218,200," + alphaTrack + ")";
-          ctx.arc(
-            cx + (prand(sSeed + 2) - 0.5) * 0.9,
-            cy + (prand(sSeed + 3) - 0.5) * 0.9,
-            r,
-            0, 2 * Math.PI
-          );
-          ctx.fill();
+              ctx.beginPath();
+              ctx.fillStyle = "rgba(0,218,200," + alphaTrack + ")";
+              ctx.arc(
+                cx + (prand(sSeed + 2) - 0.5) * 0.9,
+                cy + (prand(sSeed + 3) - 0.5) * 0.9,
+                r,
+                0, 2 * Math.PI
+              );
+              ctx.fill();
+            }
+          }
         }
+
+        // Bright head at current tip (always visible)
+        var tipX = p.x0 + p.dx * currentLen;
+        var tipY = p.y0 + p.dy * currentLen;
+
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(255,255,255," + alphaTrack + ")";
+        ctx.arc(tipX, tipY, 2.6, 0, 2 * Math.PI);
+        ctx.fill();
       }
     }
-
-    // Bright head at current tip (always visible)
-    var tipX = p.x0 + p.dx * currentLen;
-    var tipY = p.y0 + p.dy * currentLen;
-
-    ctx.beginPath();
-    ctx.fillStyle = "rgba(255,255,255," + alphaTrack + ")";
-    ctx.arc(tipX, tipY, 2.6, 0, 2 * Math.PI);
-    ctx.fill();
-  }
-}
 
 
     function segmentOffscreen(x1, y1, x2, y2, m, W, H) {
