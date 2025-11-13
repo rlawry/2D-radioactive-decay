@@ -324,6 +324,12 @@
             <input type="number" id="gridY" value="20">
             Grid Size (vertical)
           </span>
+          <span class="pos1">
+            <label>
+              <input type="checkbox" id="cloudChamber" checked>
+              Cloud chamber (show tracks)
+            </label>
+          </span>
         </div>
         <div>
           <button id="bu2" class="start">Start</button>
@@ -361,11 +367,13 @@
   </div>
 
   <script>
-    var colorBackground = "rgba(200,200,200,1)";
+    var colorBackground = "rgba(50,50,50,1)";
     var colorActive = "#ff0000";
     var colorGradActive;
     var colorDecayed = "#000000";
     var colorTime = "#0000ff";
+
+    var showCloudChamber = true;  // controls trail rendering only
 
     var prevHalfLife = null;   // for palette changes
 
@@ -414,6 +422,11 @@
     var symbolHalfLife = "T";
     var symbolQuotient = "N/N_0";
 
+    var decayRunning = false;   // controls radioactive decay only
+    var loopRunning = false;   // controls whether RAF loop is active
+    var rafId = null;
+    var lastNow = 0;
+
     var particles = [];
     var animFrameId = null;
 
@@ -424,81 +437,146 @@
       };
     }
 
+    const ACCENT_RGBA = "rgba(0,218,200,1)";
+
     function spawnParticle(x, y) {
-      var angle = Math.random() * Math.PI * 2;
-      var speed = 660 + Math.random() * 60;      // slightly slower for smoother arcs
-      var life = 4 + Math.random() * 2;          // 4–6 seconds total visible time
+      const angle = Math.random() * 2 * Math.PI;
+      const speed = 3500 + Math.random() * 300;  // keep your high energy
+      const life = 2 + Math.random() * 1;       // uniform fade window
+      const length = 550 + Math.random() * 200;   // track length
+
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+
+      // Precompute polyline at fixed spacing -> smooth, uniform density
+      const spacing = 6; // px between vertices
+      const n = Math.max(2, Math.ceil(length / spacing));
+      const points = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const s = i * spacing;
+        points[i] = { x: x + dx * s, y: y + dy * s };
+      }
+
+      // Precompute shimmer specks anchored to the line (2 per vertex)
+      const theta = Math.atan2(dy, dx) + Math.PI / 2;
+      const specks = [];
+      for (let i = 0; i < n; i++) {
+        const base = points[i];
+        const jitter = (Math.random() - 0.5) * 4; // ±2 px band
+        const sx = base.x + Math.cos(theta) * jitter;
+        const sy = base.y + Math.sin(theta) * jitter;
+        const at = i * spacing; // distance along track where speck becomes visible
+        specks.push({ x: sx, y: sy, r: 0.9 + Math.random() * 1.1, at });
+        specks.push({
+          x: sx + (Math.random() - 0.5),
+          y: sy + (Math.random() - 0.5), r: 0.7 + Math.random() * 0.9, at
+        });
+      }
 
       particles.push({
-        x: x,
-        y: y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: life,
-        maxLife: life,
-        history: [],
-        historyMax: 90                           // long trail (tune if needed)
+        x0: x, y0: y, dx, dy,
+        speed, length,
+        age: 0, life, maxLife: life,
+        spacing, points, specks
       });
     }
 
     function updateParticles(dt) {
       if (dt <= 0) return;
 
-      for (var i = particles.length - 1; i >= 0; i--) {
-        var p = particles[i];
-
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const p = particles[i];
+        p.age += dt;
         p.life -= dt;
-        if (p.life <= 0) {
+        if (p.life <= 0) { particles.splice(i, 1); continue; }
+
+        // Off-screen cull once the visible segment is entirely outside
+        const currentLen = Math.min(p.speed * p.age, p.length);
+        const tipIndex = Math.max(1, Math.floor(currentLen / p.spacing));
+        const a = p.points[0];
+        const b = p.points[Math.min(tipIndex, p.points.length - 1)];
+        if (segmentOffscreen(a.x, a.y, b.x, b.y, 12, canvas.width, canvas.height)) {
           particles.splice(i, 1);
-          continue;
-        }
-
-        p.x += p.vx * dt;
-        p.y += p.vy * dt;
-
-        p.history.push({ x: p.x, y: p.y });
-        if (p.history.length > p.historyMax) {
-          p.history.shift();
         }
       }
     }
 
-    function renderParticles() {
-      for (var i = 0; i < particles.length; i++) {
-        var p = particles[i];
-        var lifeFactor = p.life / p.maxLife; // 1 -> 0 over lifetime
-        var history = p.history;
-        var len = history.length;
+    function prand(seed) {
+      var x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
 
-        if (len === 0) continue;
+function renderParticles() {
+  for (var i = 0; i < particles.length; i++) {
+    var p = particles[i];
+    var lifeFactor = p.life / p.maxLife;
+    if (lifeFactor <= 0) continue;
 
-        // Tail (oldest) at j=0 -> faint
-        // Head (newest) at j=len-1 -> bright
-        for (var j = 0; j < len; j++) {
-          var h = history[j];
+    // Visible portion of the ray at this time
+    var currentLen = Math.min(p.speed * p.age, p.length);
+    if (currentLen <= 0) continue;
 
-          var t = j / (len - 1 || 1);          // 0 at tail, 1 at head
-          var alpha = lifeFactor * t * 0.9;    // fade with both age and life
-          if (alpha <= 0.02) continue;
+    // Uniform fade of the whole track as time passes
+    var alphaTrack = Math.max(0, Math.min(1, lifeFactor)) * 0.9;
 
-          var radius = 1 + 2 * t;              // slightly larger near head
+    if (showCloudChamber) {
+      // Densified shimmer along the ray (no history)
+      var segments = 100;                     // resolution
+      var step = currentLen / segments;
+      var perp = Math.atan2(p.dy, p.dx) + Math.PI / 2;
+
+      for (var s = 0; s <= currentLen; s += step) {
+        var t = s / (p.length || 1);         // 0..1 along full planned length
+
+        var baseX = p.x0 + p.dx * s;
+        var baseY = p.y0 + p.dy * s;
+
+        // Tight perpendicular jitter band → cloud-chamber look
+        var seed = i * 997 + Math.floor(t * 977);
+        var jitterMag = 1.5 + 2.5 * prand(seed);          // narrow band
+        var jitter = (prand(seed + 1) - 0.5) * 2 * jitterMag;
+
+        var cx = baseX + Math.cos(perp) * jitter;
+        var cy = baseY + Math.sin(perp) * jitter;
+
+        // A few specks per sample to avoid gaps (uniform alpha)
+        var specks = 3;
+        for (var k = 0; k < specks; k++) {
+          var sSeed = seed + k * 37;
+          var r = 1.0 + 1.2 * prand(sSeed + 1);
 
           ctx.beginPath();
-          ctx.fillStyle = "rgba(0,218,200," + alpha + ")";
-          ctx.arc(h.x, h.y, radius, 0, 2 * Math.PI);
-          ctx.fill();
-        }
-
-        // Extra head sparkle at current position
-        var headAlpha = lifeFactor;
-        if (headAlpha > 0.05) {
-          ctx.beginPath();
-          ctx.fillStyle = "rgba(255,255,255," + headAlpha + ")";
-          ctx.arc(p.x, p.y, 2.4, 0, 2 * Math.PI);
+          ctx.fillStyle = "rgba(0,218,200," + alphaTrack + ")";
+          ctx.arc(
+            cx + (prand(sSeed + 2) - 0.5) * 0.9,
+            cy + (prand(sSeed + 3) - 0.5) * 0.9,
+            r,
+            0, 2 * Math.PI
+          );
           ctx.fill();
         }
       }
     }
+
+    // Bright head at current tip (always visible)
+    var tipX = p.x0 + p.dx * currentLen;
+    var tipY = p.y0 + p.dy * currentLen;
+
+    ctx.beginPath();
+    ctx.fillStyle = "rgba(255,255,255," + alphaTrack + ")";
+    ctx.arc(tipX, tipY, 2.6, 0, 2 * Math.PI);
+    ctx.fill();
+  }
+}
+
+
+    function segmentOffscreen(x1, y1, x2, y2, m, W, H) {
+      const left = Math.max(x1, x2) < -m;
+      const right = Math.min(x1, x2) > W + m;
+      const above = Math.max(y1, y2) < -m;
+      const below = Math.min(y1, y2) > H + m;
+      return left || right || above || below;
+    }
+
     function renderAtomsAndParticles() {
       ctx.fillStyle = colorBackground;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -567,6 +645,15 @@
       bu1.onclick = reactionReset;
       bu2.onclick = reactionStart;
       bu3.onclick = reactionDiagram;
+      var cc = getElement("cloudChamber");
+      if (cc) {
+        showCloudChamber = cc.checked;
+        cc.addEventListener("change", function () {
+          showCloudChamber = cc.checked;
+          // optional immediate visual refresh
+          renderAtomsAndParticles();
+        });
+      }
     }
 
     function setButton2State(st) {
@@ -584,30 +671,63 @@
 
     function reactionReset() {
       setButton2State(0);
-      stopAnimation();
-      reset();
+      decayRunning = false;
+      stopLoop();          // stop RAF
+      reset();             // rebuild atoms, times, arrays
       paintAtoms();
       writeValues();
     }
 
     function reactionStart() {
+      // toggle button state: 0->1 (start), 1->2 (pause), 2->1 (resume)
       switchButton2();
-      if (bu2.state === 1) startAnimation();
-      else stopAnimation();
-      if (bu2.state === 2) savePoint();
-      // optional: one immediate update on click
-      paintSimulation(0);
+
+      if (bu2.state === 1) {          // Start/Resume
+        decayRunning = true;
+        ensureLoop();                 // make sure RAF is running
+      } else if (bu2.state === 2) {   // Pause
+        decayRunning = false;         // stop advancing decay clock
+        savePoint();                  // keep your “pause point” behavior
+        ensureLoop();                 // keep loop alive to drain particles
+      }
+    }
+
+    function ensureLoop() {
+      if (!loopRunning) {
+        loopRunning = true;
+        lastNow = performance.now();
+        rafId = requestAnimationFrame(loopStep);
+      }
+    }
+
+    function stopLoop() {
+      loopRunning = false;
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+
+    function loopStep(now) {
+      if (!loopRunning) return;
+
+      var dt = (now - lastNow) / 1000;
+      lastNow = now;
+      if (dt < 0) dt = 0;
+      if (dt > 0.1) dt = 0.1;   // clamp tab-jump spikes
+
+      paintSimulation(dt);      // advance particles every frame; decay only if running
+
+      // Auto-stop when nothing to animate
+      if (!decayRunning && particles.length === 0) {
+        stopLoop();
+        return;
+      }
+      rafId = requestAnimationFrame(loopStep);
     }
 
     function reactionDiagram() {
       drawDecayLine();
-    }
-
-    function startAnimation() {
-      if (on) return;
-      on = true;
-      t0 = performance.now();
-      animFrameId = requestAnimationFrame(animationStep);
     }
 
     function animationStep(now) {
@@ -622,14 +742,6 @@
 
       paintSimulation(dt);
       animFrameId = requestAnimationFrame(animationStep);
-    }
-
-    function stopAnimation() {
-      on = false;
-      if (animFrameId != null) {
-        cancelAnimationFrame(animFrameId);
-        animFrameId = null;
-      }
     }
 
     function savePoint() {
@@ -944,26 +1056,26 @@
     }
 
     function paintSimulation(dt) {
-      // dt is seconds between frames
       dt = dt || 0;
 
-      if (on && dt > 0) {
+      // Advance decay clock only when not paused
+      if (decayRunning && dt > 0) {
         timeVariable += dt;
       }
 
-      // Handle decays and spawn particles
-      for (var i = 0; i < AtomTotal; i++) {
-        if (decayed[i]) continue;
-        if (timeVariable < timeDecay[i]) continue;
-
-        decayed[i] = true;
-        number--;
-
-        var pos = getNucleusPosition(i);
-        spawnParticle(pos.x, pos.y);
+      // Spawn decays only when decay is running
+      if (decayRunning) {
+        for (var i = 0; i < AtomTotal; i++) {
+          if (decayed[i]) continue;
+          if (timeVariable < timeDecay[i]) continue;
+          decayed[i] = true;
+          number--;
+          var pos = getNucleusPosition(i);
+          spawnParticle(pos.x, pos.y);
+        }
       }
 
-      // Update particle motion and lifetimes
+      // Particles always update & fade, even when paused
       updateParticles(dt);
 
       // Redraw atoms + particle effects
@@ -978,7 +1090,6 @@
         graphCtx.fillRect(p.x - 2, p.y - 2, 4, 4);
       }
     }
-
     document.addEventListener("DOMContentLoaded", start, false);
 
     // Nuclides modal
