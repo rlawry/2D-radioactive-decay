@@ -7,6 +7,7 @@
 
   <!-- Nuclide data (must define `nuclides`) -->
   <script src="nuclides.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
     :root {
@@ -70,6 +71,80 @@
       background-color: #aaaaaa;
       width: 100%;
       max-width: 960px;
+    }
+
+    #simRow {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      max-width: 960px;
+    }
+
+    /* Let the canvas area flex next to the panel */
+    #canvas {
+      flex: 1 1 auto;
+      max-width: none;
+    }
+
+    /* Right-side nuclide panel */
+    #nuclidePanel {
+      flex: 0 0 220px;
+      background: #f9f9f9;
+      border: 1px solid #cccccc;
+      border-radius: var(--radius);
+      padding: 6px 8px;
+      font-size: 11px;
+      line-height: 1.3;
+      box-shadow: 0 0 4px rgba(0, 0, 0, 0.15);
+    }
+
+    .nuclide-panel-header {
+      font-weight: 600;
+      font-size: 12px;
+      margin-bottom: 4px;
+      text-align: center;
+    }
+
+    .nuclide-panel-body {
+      margin-bottom: 4px;
+      max-height: 430px;
+      /* scrollable area */
+      overflow-y: auto;
+      /* scroll if list is long */
+    }
+
+    .nuclide-panel-list {
+      display: block;
+    }
+
+    .nuclide-panel-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 1px 0;
+    }
+
+    .nuclide-panel-name {
+      flex: 1 1 auto;
+    }
+
+    .nuclide-panel-hl {
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .nuclide-panel-empty {
+      font-style: italic;
+      opacity: 0.8;
+    }
+
+    .nuclide-panel-footer {
+      margin-top: 2px;
+      font-size: 10px;
+      text-align: center;
+      opacity: 0.7;
     }
 
     #cv {
@@ -198,8 +273,7 @@
       font-size: 12px;
       font-weight: 600;
       background: rgba(0, 0, 0, 0.05);
-      cursor: move;
-      user-select: none;
+      /* no dragging cursor */
     }
 
     #graph-cv {
@@ -213,72 +287,24 @@
       padding: 2px 0 4px;
     }
 
-    /* Modal */
-
-    .modal {
-      display: none;
-      position: fixed;
-      z-index: 20;
-      inset: 0;
-      background-color: var(--modal-backdrop);
-      text-align: center;
-    }
-
-    .modal-content {
-      background-color: #7059f5;
-      color: #ffffff;
-      margin: 160px auto 0;
-      padding: 8px 10px 10px;
-      border-radius: var(--radius);
-      width: 520px;
-      max-width: 90vw;
-      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-    }
-
-    .row {
-      display: flex;
-      margin-top: 4px;
-    }
-
-    .nuclide-list,
-    .half-life-list {
-      background-color: #ffffff;
-      color: #000000;
-      margin: 0;
-      padding: 4px 6px;
-      min-height: 80px;
-      width: 50%;
-      font-size: 14px;
-      text-align: left;
-      overflow-y: auto;
-    }
-
-    .half-life-list {
-      text-align: right;
-    }
-
-    .close {
-      color: #ffb3b3;
-      float: right;
-      margin-right: 4px;
-      font-size: 18px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-
-    .close:hover,
-    .close:focus {
-      color: #000000;
-    }
-
     @media (max-width: 900px) {
       #total {
         max-width: 100%;
         padding: 0 8px 16px;
       }
 
+      #simRow {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
       #canvas {
         max-width: 100%;
+      }
+
+      #nuclidePanel {
+        flex: 0 0 auto;
+        width: 100%;
       }
 
       #graph {
@@ -309,39 +335,58 @@
 
   <div id="total">
 
-    <div id="canvas">
-      <div class="control-panel">
-        <div>
-          <span class="pos1">
-            <input type="number" id="HalfLife" value="10">
-            Half life (seconds)
-          </span>
-          <span class="pos1">
-            <input type="number" id="gridX" value="20">
-            Grid Size (horizontal)
-          </span>
-          <span class="pos1">
-            <input type="number" id="gridY" value="20">
-            Grid Size (vertical)
-          </span>
-          <span class="pos1">
-            <label>
-              <input type="checkbox" id="cloudChamber" checked>
-              Cloud chamber (show tracks)
-            </label>
-          </span>
+    <div id="simRow">
+      <div id="canvas">
+        <div class="control-panel">
+          <div>
+            <span class="pos1">
+              <input type="number" id="HalfLife" value="10">
+              Half life (seconds)
+            </span>
+            <span class="pos1">
+              <input type="number" id="gridX" value="20">
+              Grid Size (horizontal)
+            </span>
+            <span class="pos1">
+              <input type="number" id="gridY" value="20">
+              Grid Size (vertical)
+            </span>
+            <span class="pos1">
+              <label>
+                <input type="checkbox" id="cloudChamber" checked>
+                Cloud chamber (show tracks)
+              </label>
+            </span>
+          </div>
+          <div>
+            <button id="bu2" class="start">Start</button>
+            <button id="bu1" class="reset">Reset</button>
+            <!-- rename button text if you like -->
+            <button id="bu4" class="nuclides">Display Isotopes with Similar Half Life</button>
+          </div>
         </div>
-        <div>
-          <button id="bu2" class="start">Start</button>
-          <button id="bu1" class="reset">Reset</button>
-          <button id="bu4" class="nuclides">Nuclides with Similar HL</button>
-        </div>
+
+        <canvas id="cv" width="960" height="480">
+          This browser doesn't support HTML5 canvas!
+        </canvas>
       </div>
 
-      <canvas id="cv" width="960" height="480">
-        This browser doesn't support HTML5 canvas!
-      </canvas>
+      <!-- Right-side panel -->
+      <aside id="nuclidePanel" aria-label="Isotopes with similar half-life">
+        <div class="nuclide-panel-header">Isotopes with Similar Half-Life</div>
+        <div class="nuclide-panel-body">
+          <div class="nuclide-panel-list">
+            <p class="nuclide-panel-empty">
+              Click “Display Isotopes with Similar Half Life” to load the list.
+            </p>
+          </div>
+        </div>
+        <div class="nuclide-panel-footer">
+          Uses the current half-life value (seconds).
+        </div>
+      </aside>
     </div>
+
 
     <div id="graph">
       <div id="graphheader">The Graph</div>
@@ -352,18 +397,6 @@
         <button id="bu3" class="show-ideal">Show Ideal Decay Plot</button>
       </div>
     </div>
-
-    <div class="modal" id="nucModal">
-      <div class="modal-content">
-        <span class="closeNuc close">&times;</span>
-        <span>Nuclides with Similar Half-Life</span>
-        <div class="row">
-          <div class="nuclide-list"></div>
-          <div class="half-life-list"></div>
-        </div>
-      </div>
-    </div>
-
   </div>
 
   <script>
@@ -395,6 +428,8 @@
     var timeElapsed = 0;
     var spacing = 15;
     var graphScale = 1.2;
+
+    var graphChart = null;   // Chart.js instance
 
     var canvas, ctx, graphCanvas, graphCtx;
     var bu1, bu2, bu3;
@@ -627,10 +662,7 @@
 
     function start() {
       canvas = getElement("cv");
-      graphCanvas = getElement("graph-cv");
       ctx = canvas.getContext("2d");
-      graphCtx = graphCanvas.getContext("2d");
-      textXPos = 230;
 
       bu1 = getElement("bu1", text01);
       bu2 = getElement("bu2");
@@ -642,22 +674,82 @@
       addWheelIncrement(document.getElementById("gridX"), 1, 1, 300);
       addWheelIncrement(document.getElementById("gridY"), 1, 1, 300);
 
+      // Create the Chart.js graph
+      initGraphChart();
+
       reset();
       paintAtoms();
-      writeValues();
 
       bu1.onclick = reactionReset;
       bu2.onclick = reactionStart;
       bu3.onclick = reactionDiagram;
+
       var cc = getElement("cloudChamber");
       if (cc) {
         showCloudChamber = cc.checked;
         cc.addEventListener("change", function () {
           showCloudChamber = cc.checked;
-          // optional immediate visual refresh
+          // immediate visual refresh
           renderAtomsAndParticles();
         });
       }
+
+      // Wire isotope button to the side panel (not a modal)
+      var nuclideButton = getElement("bu4");
+      if (nuclideButton) {
+        nuclideButton.addEventListener("click", updateNuclidePanel);
+      }
+    }
+
+    function initGraphChart() {
+      var gCanvas = document.getElementById("graph-cv");
+      if (!gCanvas || typeof Chart === "undefined") return;
+
+      graphChart = new Chart(gCanvas, {
+        type: "scatter",
+        data: {
+          datasets: [
+            {
+              label: "Actual decay (N/N₀)",
+              data: [],            // filled by savePoint()
+              showLine: false,
+              pointRadius: 4
+            },
+            {
+              label: "Ideal decay",
+              data: [],            // filled on first button click
+              type: "line",
+              showLine: true,
+              pointRadius: 0,
+              borderWidth: 2,
+              borderDash: [4, 3],
+              hidden: true         // start hidden
+            }
+          ]
+        },
+        options: {
+          animation: false,
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: "linear",
+              title: { display: true, text: "Time (half-lives, T)" },
+              min: 0,
+              max: graphTotalHalfLives
+            },
+            y: {
+              type: "linear",
+              title: { display: true, text: "Fraction remaining (N/N₀)" },
+              min: 0,
+              max: 1
+            }
+          },
+          plugins: {
+            legend: { position: "top" }
+          }
+        }
+      });
     }
 
     function setButton2State(st) {
@@ -676,11 +768,11 @@
     function reactionReset() {
       setButton2State(0);
       decayRunning = false;
-      stopLoop();          // stop RAF
-      reset();             // rebuild atoms, times, arrays
+      stopLoop();
+      reset();
       paintAtoms();
-      writeValues();
     }
+
 
     function reactionStart() {
       // toggle button state: 0->1 (start), 1->2 (pause), 2->1 (resume)
@@ -731,7 +823,26 @@
     }
 
     function reactionDiagram() {
-      drawDecayLine();
+      if (!graphChart) return;
+
+      var idealDataset = graphChart.data.datasets[1];
+
+      // Populate ideal decay if empty
+      if (!idealDataset.data || idealDataset.data.length === 0) {
+        var pts = [];
+        for (var x = 0; x <= graphTotalHalfLives; x += 0.05) {
+          pts.push({ x: x, y: Math.pow(2, -x) });
+        }
+        idealDataset.data = pts;
+      }
+
+      // Toggle visibility
+      idealDataset.hidden = !idealDataset.hidden;
+      bu3.textContent = idealDataset.hidden
+        ? "Show Ideal Decay Plot"
+        : "Hide Ideal Decay Plot";
+
+      graphChart.update();
     }
 
     function animationStep(now) {
@@ -749,12 +860,18 @@
     }
 
     function savePoint() {
-      if (timeVariable > 150) return;
-      var n = xyDiagram.length;
-      xyDiagram[n] = {
-        x: Math.round(graphXPos + timeVariable / halfLife * graphXIncrement),
-        y: Math.round(graphYPos - number / AtomTotal * graphYIncrement)
-      };
+      if (!graphChart) return;
+
+      // x-axis: time in units of half-life (T)
+      var tHalfLives = halfLife > 0 ? timeVariable / halfLife : 0;
+      if (tHalfLives < 0) tHalfLives = 0;
+      if (tHalfLives > graphTotalHalfLives) return;
+
+      // y-axis: fraction remaining N/N0
+      var frac = AtomTotal > 0 ? number / AtomTotal : 0;
+
+      graphChart.data.datasets[0].data.push({ x: tHalfLives, y: frac });
+      graphChart.update();
     }
 
     function setRandomPalette() {
@@ -801,9 +918,7 @@
       timeDecay = new Array(AtomTotal);
       decayed = new Array(AtomTotal);
       number = AtomTotal;
-      xyDiagram = [];
       particles = [];
-      savePoint();
 
       for (var i = 0; i < AtomTotal; i++) {
         do {
@@ -816,7 +931,18 @@
       if (yAtoms * spacing > canvas.height - 50) {
         canvas.height = 100 + spacing * yAtoms;
       }
+
+      // Reset the Chart.js data
+      if (graphChart) {
+        graphChart.data.datasets[0].data = [];  // actual
+        // leave ideal dataset as-is; user toggles it
+        graphChart.update();
+      }
+
+      // Add initial point at t = 0, N/N0 = 1
+      savePoint();
     }
+
 
 
     function newPath() {
@@ -951,12 +1077,6 @@
 
     function paintAtoms() {
       renderAtomsAndParticles();
-
-      graphCtx.fillStyle = colorBackground;
-      graphCtx.fillRect(0, 0, graphCanvas.width, graphCanvas.height);
-      graphCtx.font = FONT1;
-
-      drawGraph();
     }
 
     function drawDecayLine() {
@@ -1084,112 +1204,73 @@
 
       // Redraw atoms + particle effects
       renderAtomsAndParticles();
-
-      // Text / counts / graph points
-      writeValues();
-
-      graphCtx.fillStyle = "black";
-      for (var j = 0; j < xyDiagram.length; j++) {
-        var p = xyDiagram[j];
-        graphCtx.fillRect(p.x - 2, p.y - 2, 4, 4);
-      }
+      // Graph is updated only when we explicitly save points via savePoint()
     }
+
     document.addEventListener("DOMContentLoaded", start, false);
 
-    // Nuclides modal
+    // Isotope side panel (no modal)
+    // Isotope side panel (no modal)
+    function updateNuclidePanel() {
+      var panel = document.getElementById("nuclidePanel");
+      if (!panel) return;
 
-    var nucModal = document.getElementById("nucModal");
-    var bu4 = document.getElementById("bu4");
-    var nucSpan = document.getElementsByClassName("closeNuc")[0];
+      var listEl = panel.querySelector(".nuclide-panel-list");
+      if (!listEl) return;
 
-    bu4.onclick = function () {
-      var halfLifeVal = parseFloat(document.getElementById("HalfLife").value);
-      if (!isFinite(halfLifeVal) || halfLifeVal <= 0) return;
+      var input = document.getElementById("HalfLife");
+      var halfLifeVal = parseFloat(input && input.value);
 
-      var nuclist = document.querySelector(".nuclide-list");
-      var halflist = document.querySelector(".half-life-list");
-      nuclist.innerHTML = "";
-      halflist.innerHTML = "";
+      if (!Number.isFinite(halfLifeVal) || halfLifeVal <= 0) {
+        listEl.innerHTML =
+          '<p class="nuclide-panel-empty">Enter a positive half-life to see matching isotopes.</p>';
+        return;
+      }
 
-      for (var i = 0; i < (nuclides.nuclides || []).length; i++) {
-        var nuc = nuclides.nuclides[i];
-        var nucHalfLife = nuc["half-life"];
-        if (!nucHalfLife || nucHalfLife <= 0) continue;
+      var matches = [];
+      if (typeof nuclides === "object" && Array.isArray(nuclides.nuclides)) {
+        var logTarget = Math.log(halfLifeVal);
 
-        if (Math.abs(Math.log(halfLifeVal) - Math.log(nucHalfLife)) <= 1) {
-          nuclist.innerHTML += "<p>" + nuc.name + ":</p>";
-          halflist.innerHTML += "<p>" + numberWithCommas(nucHalfLife) + " s</p>";
+        for (var i = 0; i < nuclides.nuclides.length; i++) {
+          var nuc = nuclides.nuclides[i];
+          var nHL = nuc["half-life"];
+          if (!nHL || nHL <= 0) continue;
+
+          // Within ±1 order of magnitude in log-space
+          if (Math.abs(Math.log(nHL) - logTarget) <= 1) {
+            matches.push(nuc);
+          }
         }
-      }
-      nucModal.style.display = "block";
-    };
 
-    nucSpan.onclick = function () {
-      nucModal.style.display = "none";
-    };
-
-    window.onclick = function (event) {
-      if (event.target === nucModal) {
-        nucModal.style.display = "none";
-      }
-    };
-
-    makeDraggable(document.getElementById("graph"));
-
-    function makeDraggable(el) {
-      if (!el) return;
-
-      var handle = document.getElementById(el.id + "header") || el;
-      var offsetX = 0;
-      var offsetY = 0;
-      var containerRect = null;
-
-      handle.addEventListener("mousedown", onMouseDown);
-
-      function onMouseDown(e) {
-        e.preventDefault();
-
-        var container = document.getElementById("total") || document.body;
-        containerRect = container.getBoundingClientRect();
-        var rect = el.getBoundingClientRect();
-
-        // Distance from cursor to element's top-left corner
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
-
-        // Lock current position relative to container
-        el.style.position = "absolute";
-        el.style.left = (rect.left - containerRect.left) + "px";
-        el.style.top = (rect.top - containerRect.top) + "px";
-        el.style.right = "auto";
-        el.style.bottom = "auto";
-        el.style.margin = "0";
-
-        document.addEventListener("mousemove", onMouseMove);
-        document.addEventListener("mouseup", onMouseUp);
+        // Sort by half-life for readability
+        matches.sort(function (a, b) {
+          return a["half-life"] - b["half-life"];
+        });
       }
 
-      function onMouseMove(e) {
-        e.preventDefault();
-        var x = e.clientX - containerRect.left - offsetX;
-        var y = e.clientY - containerRect.top - offsetY;
-
-        // Optional: constrain inside container
-        var maxX = containerRect.width - el.offsetWidth;
-        var maxY = containerRect.height - el.offsetHeight;
-        if (x < 0) x = 0;
-        if (y < 0) y = 0;
-        if (x > maxX) x = maxX;
-        if (y > maxY) y = maxY;
-
-        el.style.left = x + "px";
-        el.style.top = y + "px";
+      if (!matches.length) {
+        listEl.innerHTML =
+          '<p class="nuclide-panel-empty">No isotopes in the dataset within one order of magnitude.</p>';
+        return;
       }
 
-      function onMouseUp() {
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
+      var html = "";
+      for (var j = 0; j < matches.length; j++) {
+        var n = matches[j];
+        html +=
+          '<div class="nuclide-panel-row">' +
+          '<span class="nuclide-panel-name">' + n.name + '</span>' +
+          '<span class="nuclide-panel-hl">' +
+          numberWithCommas(n["half-life"]) + ' s</span>' +
+          '</div>';
       }
+      listEl.innerHTML = html;
+    }
+
+    // Wire the button to update the side panel
+    var bu4 = document.getElementById("bu4");
+    if (bu4) {
+      bu4.addEventListener("click", updateNuclidePanel);
     }
 
     function numberWithCommas(x) {
