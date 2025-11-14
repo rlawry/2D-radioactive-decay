@@ -69,8 +69,25 @@
       padding: 0;
       border: 1px solid var(--border);
       background-color: #aaaaaa;
-      width: 100%;
-      max-width: 960px;
+      flex: 2 1 0;
+      /* take about 2/3 of the row */
+      max-width: 720px;
+    }
+
+    .canvas-footer {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      justify-content: center;
+      align-items: center;
+      padding: 6px 8px;
+      font-size: 12px;
+      background: #f7f7f7;
+      border-top: 1px solid #cccccc;
+    }
+
+    .canvas-footer span {
+      white-space: nowrap;
     }
 
     #simRow {
@@ -82,15 +99,11 @@
       max-width: 960px;
     }
 
-    /* Let the canvas area flex next to the panel */
-    #canvas {
-      flex: 1 1 auto;
-      max-width: none;
-    }
-
     /* Right-side nuclide panel */
     #nuclidePanel {
-      flex: 0 0 220px;
+      flex: 1 1 0;
+      /* about 1/3 of the row */
+      max-width: 210px;
       background: #f9f9f9;
       border: 1px solid #cccccc;
       border-radius: var(--radius);
@@ -109,10 +122,9 @@
 
     .nuclide-panel-body {
       margin-bottom: 4px;
-      max-height: 430px;
-      /* scrollable area */
+      max-height: 380px;
+      /* scroll inside panel if long */
       overflow-y: auto;
-      /* scroll if list is long */
     }
 
     .nuclide-panel-list {
@@ -150,9 +162,10 @@
     #cv {
       display: block;
       width: 100%;
-      /* scales down on small screens */
+      /* keep aspect ratio consistent with intrinsic 960x480 => 2:1 */
+      aspect-ratio: 2 / 1;
       height: auto;
-      /* keeps aspect ratio */
+      /* important: no fixed height */
       border: 1px solid #1e90ff;
     }
 
@@ -250,18 +263,13 @@
     }
 
     #graph {
-      position: relative;
-      /* starts centered under canvas */
-      margin: 12px auto 0;
+      margin: 16px auto 0;
       width: 100%;
-      max-width: 600px;
+      max-width: 960px;
       height: 260px;
+      /* chart height on desktop */
       border: 1px solid var(--border);
-      background: linear-gradient(to right,
-          #ffffff,
-          rgba(119, 255, 56, 0.25),
-          #ffffff);
-      z-index: 9;
+      background: #ffffff;
       display: flex;
       flex-direction: column;
       align-items: stretch;
@@ -273,13 +281,13 @@
       font-size: 12px;
       font-weight: 600;
       background: rgba(0, 0, 0, 0.05);
-      /* no dragging cursor */
     }
 
     #graph-cv {
-      flex: 1;
+      flex: 1 1 auto;
       display: block;
-      margin: 0 auto;
+      width: 100%;
+      height: 100%;
     }
 
     #graph .graph-button-wrapper {
@@ -295,26 +303,18 @@
 
       #simRow {
         flex-direction: column;
-        align-items: stretch;
+        gap: 8px;
       }
 
-      #canvas {
-        max-width: 100%;
-      }
-
+      #canvas,
       #nuclidePanel {
+        max-width: 100%;
         flex: 0 0 auto;
-        width: 100%;
       }
 
       #graph {
-        position: static;
-        margin: 8px auto 0;
-        width: 100%;
-      }
-
-      #cv {
-        height: 480px;
+        height: 220px;
+        /* slightly shorter chart on phones */
       }
 
       button {
@@ -359,16 +359,22 @@
             </span>
           </div>
           <div>
-            <button id="bu2" class="start">Start</button>
-            <button id="bu1" class="reset">Reset</button>
-            <!-- rename button text if you like -->
-            <button id="bu4" class="nuclides">Display Isotopes with Similar Half Life</button>
+            <div>
+              <button id="bu2" class="start">Start</button>
+              <button id="bu1" class="reset">Reset</button>
+            </div>
           </div>
         </div>
 
         <canvas id="cv" width="960" height="480">
           This browser doesn't support HTML5 canvas!
         </canvas>
+        <div id="canvas-footer" class="canvas-footer">
+          <span id="footer-parents"></span>
+          <span id="footer-daughters"></span>
+          <span id="footer-time"></span>
+          <span id="footer-decayed-segment"></span>
+        </div>
       </div>
 
       <!-- Right-side panel -->
@@ -382,7 +388,8 @@
           </div>
         </div>
         <div class="nuclide-panel-footer">
-          Uses the current half-life value (seconds).
+          Uses the current half-life value (seconds). Data from NuDat 2.8 (NNDC) <a href="https://nucleus.iaea.org/"
+            target="_blank">here</a>.
         </div>
       </aside>
     </div>
@@ -443,7 +450,7 @@
     var xyDiagram;
 
     var text01 = "Reset";
-    var text02 = ["Start", "Pause", "Resume"];
+    var text02 = ["Start", "Pause and Plot", "Resume"];
     var text03 = "Show Ideal Decay Plot";
 
     var text04 = "Half Lives:";
@@ -454,16 +461,35 @@
     var text09 = ["milliseconds", "seconds", "minutes", "hours", "days", "weeks", "months", "years"];
 
     var decimalSeparator = ".";
-    var symbolHalfLife = "T";
-    var symbolQuotient = "N/N_0";
+    var symbolHalfLife = "T½";
+    var symbolQuotient = "Parent/Daughter";
 
     var decayRunning = false;   // controls radioactive decay only
     var loopRunning = false;   // controls whether RAF loop is active
     var rafId = null;
     var lastNow = 0;
 
+    var atomsBuffer = null;
+    var atomsCtx = null;
+
+    var decaySchedule = null;
+    var nextDecayIndex = 0;
+
     var particles = [];
     var animFrameId = null;
+
+    var denseMode = false;  // true when atoms are effectively pixels
+
+    var geigerPool = [];
+    var geigerPoolIndex = 0;
+    var GEIGER_POOL_SIZE = 8;  // number of overlapping clicks allowed
+
+    var footerParentsEl, footerDaughtersEl, footerTimeEl, footerDecayedEl;
+
+    // tracking since last Start/Resume (segment)
+    var segmentStartTimeVar = 0;        // timeVariable at segment start
+    var segmentStartDecayedCount = 0;   // decayed count at segment start
+    var lastSegmentElapsed = 0;         // last computed elapsed (used while paused)
 
     function getNucleusPosition(i) {
       return {
@@ -475,6 +501,7 @@
     const ACCENT_RGBA = "rgba(0,218,200,1)";
 
     function spawnParticle(x, y) {
+      //if (denseMode) return;
       const angle = Math.random() * 2 * Math.PI;
       const speed = 3500 + Math.random() * 300;  // keep your high energy
       const life = 2 + Math.random() * 1;       // uniform fade window
@@ -550,44 +577,40 @@
         var lifeFactor = p.life / p.maxLife;
         if (lifeFactor <= 0) continue;
 
-        // Visible portion of the ray at this time
         var currentLen = Math.min(p.speed * p.age, p.length);
         if (currentLen <= 0) continue;
 
-        // Uniform fade of the whole track as time passes
         var alphaTrack = Math.max(0, Math.min(1, lifeFactor)) * 0.9;
 
         if (showCloudChamber) {
-          // Densified shimmer along the ray (no history)
-          var segments = 100;                     // resolution
-          var step = currentLen / segments;
           var perp = Math.atan2(p.dy, p.dx) + Math.PI / 2;
 
-          for (var s = 0; s <= currentLen; s += step) {
-            var t = s / (p.length || 1);         // 0..1 along full planned length
+          // dynamically reduce resolution when there are many particles
+          var baseSegments = 60;
+          var densityFactor = 1 + (particles.length / 30);
+          var segments = Math.max(12, Math.floor(baseSegments / densityFactor));
 
+          var step = currentLen / segments;
+
+          for (var s = 0; s <= currentLen; s += step) {
             var baseX = p.x0 + p.dx * s;
             var baseY = p.y0 + p.dy * s;
 
-            // Tight perpendicular jitter band → cloud-chamber look
-            var seed = i * 997 + Math.floor(t * 977);
-            var jitterMag = 1.5 + 2.5 * prand(seed);          // narrow band
-            var jitter = (prand(seed + 1) - 0.5) * 2 * jitterMag;
+            var jitterMag = 2 + 2 * Math.random();
+            var jitter = (Math.random() - 0.5) * 2 * jitterMag;
 
             var cx = baseX + Math.cos(perp) * jitter;
             var cy = baseY + Math.sin(perp) * jitter;
 
-            // A few specks per sample to avoid gaps (uniform alpha)
-            var specks = 3;
-            for (var k = 0; k < specks; k++) {
-              var sSeed = seed + k * 37;
-              var r = 1.0 + 1.2 * prand(sSeed + 1);
+            // 2 specks per sample
+            for (var k = 0; k < 2; k++) {
+              var r = 1.0 + 1.0 * Math.random();
 
               ctx.beginPath();
               ctx.fillStyle = "rgba(0,218,200," + alphaTrack + ")";
               ctx.arc(
-                cx + (prand(sSeed + 2) - 0.5) * 0.9,
-                cy + (prand(sSeed + 3) - 0.5) * 0.9,
+                cx + (Math.random() - 0.5) * 0.8,
+                cy + (Math.random() - 0.5) * 0.8,
                 r,
                 0, 2 * Math.PI
               );
@@ -596,7 +619,7 @@
           }
         }
 
-        // Bright head at current tip (always visible)
+        // bright head
         var tipX = p.x0 + p.dx * currentLen;
         var tipY = p.y0 + p.dy * currentLen;
 
@@ -617,13 +640,18 @@
     }
 
     function renderAtomsAndParticles() {
-      ctx.fillStyle = colorBackground;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.font = FONT1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      for (var i = 0; i < AtomTotal; i++) {
-        var c = decayed[i] ? colorDecayed : colorActive;
-        drawNucleus(i, c);
+      if (atomsBuffer) {
+        ctx.drawImage(atomsBuffer, 0, 0);
+      } else {
+        // fallback (should rarely happen)
+        ctx.fillStyle = colorBackground;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        for (var i = 0; i < AtomTotal; i++) {
+          var c = decayed[i] ? colorDecayed : colorActive;
+          drawNucleus(i, c);
+        }
       }
 
       renderParticles();
@@ -633,6 +661,74 @@
       var e = document.getElementById(id);
       if (text) e.innerHTML = text;
       return e;
+    }
+
+    function initHalfLifeLogControl(input) {
+      if (!input) return;
+
+      var MIN_HALF_LIFE = 1e-23;   // seconds (choose whatever makes sense)
+      var MAX_HALF_LIFE = 1e23;   // upper bound to avoid crazy numbers
+      var LOG_STEP = 0.1;        // ~10^0.15 ≈ 1.41× per step (tweak to taste)
+
+      function parseHalfLife() {
+        var v = parseFloat(input.value);
+        if (!Number.isFinite(v) || v <= 0) v = 10; // sane default
+        return v;
+      }
+
+      function formatHalfLife(v) {
+        // clamp to positive range
+        if (v < MIN_HALF_LIFE) v = MIN_HALF_LIFE;
+        if (v > MAX_HALF_LIFE) v = MAX_HALF_LIFE;
+
+        // choose decimal places based on order of magnitude
+        var log10v = Math.log(v) / Math.LN10;
+        var decimals = 0;
+        if (log10v < -1) decimals = 4;
+        else if (log10v < 0) decimals = 3;
+        else if (log10v < 2) decimals = 2;
+        else decimals = 0;
+
+        return v.toFixed(decimals);
+      }
+
+      function stepHalfLife(direction) {
+        // direction: +1 for up / scroll up, -1 for down / scroll down
+        var current = parseHalfLife();
+        var log10v = Math.log(current) / Math.LN10;
+        log10v += LOG_STEP * direction;
+        var next = Math.pow(10, log10v);
+
+        input.value = formatHalfLife(next);
+
+        // keep everything in sync with the rest of your app
+        updateNuclidePanel();
+        reactionReset();  // rebuild atoms & decay schedule with new half-life
+      }
+
+      // Mouse wheel → log steps
+      input.addEventListener("wheel", function (event) {
+        event.preventDefault(); // avoid the default linear step / page scroll
+
+        if (event.deltaY < 0) {
+          // scroll up → increase half-life
+          stepHalfLife(+1);
+        } else if (event.deltaY > 0) {
+          // scroll down → decrease half-life
+          stepHalfLife(-1);
+        }
+      }, { passive: false });
+
+      // Arrow keys → same log steps
+      input.addEventListener("keydown", function (event) {
+        if (event.key === "ArrowUp") {
+          event.preventDefault();
+          stepHalfLife(+1);
+        } else if (event.key === "ArrowDown") {
+          event.preventDefault();
+          stepHalfLife(-1);
+        }
+      });
     }
 
     function addWheelIncrement(input, step, min, max) {
@@ -659,10 +755,42 @@
       }, { passive: false });
     }
 
+    function initGeiger() {
+      var base = document.getElementById("geigerSound");
+      if (!base) return;
+
+      geigerPool = [];
+      geigerPoolIndex = 0;
+
+      for (var i = 0; i < GEIGER_POOL_SIZE; i++) {
+        var clone = base.cloneNode();
+        clone.removeAttribute("id");     // avoid duplicate IDs
+        clone.volume = 0.6;              // tweak volume if needed
+        document.body.appendChild(clone);
+        geigerPool.push(clone);
+      }
+    }
+
+    function playGeiger() {
+      if (!geigerPool.length) return;
+
+      var a = geigerPool[geigerPoolIndex];
+      geigerPoolIndex = (geigerPoolIndex + 1) % geigerPool.length;
+
+      try {
+        a.currentTime = 0;
+        a.play();
+      } catch (e) {
+        // ignore play() failures (e.g. before user interaction)
+      }
+    }
 
     function start() {
       canvas = getElement("cv");
+      graphCanvas = getElement("graph-cv");
       ctx = canvas.getContext("2d");
+      graphCtx = graphCanvas.getContext("2d");
+      textXPos = 230;
 
       bu1 = getElement("bu1", text01);
       bu2 = getElement("bu2");
@@ -670,15 +798,27 @@
 
       setButton2State(0);
 
-      // wheel on grid inputs
+      // wheel on grid inputs (already there)
       addWheelIncrement(document.getElementById("gridX"), 1, 1, 300);
       addWheelIncrement(document.getElementById("gridY"), 1, 1, 300);
 
-      // Create the Chart.js graph
-      initGraphChart();
+      // NEW: log-style wheel + arrow keys for half-life
+      var halfLifeInput = document.getElementById("HalfLife");
+      initHalfLifeLogControl(halfLifeInput);
+
+      initGeiger();
+
+      footerParentsEl = document.getElementById("footer-parents");
+      footerDaughtersEl = document.getElementById("footer-daughters");
+      footerTimeEl = document.getElementById("footer-time");
+      footerDecayedEl = document.getElementById("footer-decayed-segment");
 
       reset();
       paintAtoms();
+
+      // after first reset, initialize segment tracking + footer
+      resetSegmentTracking();
+      updateFooter();
 
       bu1.onclick = reactionReset;
       bu2.onclick = reactionStart;
@@ -689,16 +829,62 @@
         showCloudChamber = cc.checked;
         cc.addEventListener("change", function () {
           showCloudChamber = cc.checked;
-          // immediate visual refresh
           renderAtomsAndParticles();
         });
       }
 
-      // Wire isotope button to the side panel (not a modal)
-      var nuclideButton = getElement("bu4");
-      if (nuclideButton) {
-        nuclideButton.addEventListener("click", updateNuclidePanel);
+      // nuclide panel wiring (you already have this)
+      if (halfLifeInput) {
+        halfLifeInput.addEventListener("input", updateNuclidePanel);
+        halfLifeInput.addEventListener("change", updateNuclidePanel);
       }
+    }
+
+    function resetSegmentTracking() {
+      // called after full reset
+      segmentStartTimeVar = timeVariable;                 // usually 0
+      segmentStartDecayedCount = AtomTotal - number;      // usually 0
+      lastSegmentElapsed = 0;
+    }
+
+    function startSegment() {
+      // called every time we go into "running" state (Start or Resume)
+      segmentStartTimeVar = timeVariable;
+      segmentStartDecayedCount = AtomTotal - number;
+      lastSegmentElapsed = 0;
+    }
+
+    function updateFooter() {
+      if (!footerParentsEl) return;
+
+      var parents = number;
+      var daughters = AtomTotal - number;
+      var decayedTotal = daughters;
+
+      var elapsed;
+      if (decayRunning) {
+        elapsed = timeVariable - segmentStartTimeVar;
+        if (elapsed < 0) elapsed = 0;
+        lastSegmentElapsed = elapsed;
+      } else {
+        // when paused, keep showing last value
+        elapsed = lastSegmentElapsed;
+      }
+
+      var decayedSinceSegment = decayedTotal - segmentStartDecayedCount;
+      if (decayedSinceSegment < 0) decayedSinceSegment = 0;
+
+      footerParentsEl.textContent =
+        "# Parent Particles Present: " + parents;
+
+      footerDaughtersEl.textContent =
+        "# Daughter Particles Present: " + daughters;
+
+      footerTimeEl.textContent =
+        "Time Since Pause/Start: " + elapsed.toFixed(2) + " s";
+
+      footerDecayedEl.textContent =
+        "Number of Particles Decayed Since Pause/Start: " + decayedSinceSegment;
     }
 
     function initGraphChart() {
@@ -710,7 +896,7 @@
         data: {
           datasets: [
             {
-              label: "Actual decay (N/N₀)",
+              label: "Actual decay (Parent/Daughter)",
               data: [],            // filled by savePoint()
               showLine: false,
               pointRadius: 4
@@ -731,22 +917,49 @@
           animation: false,
           responsive: true,
           maintainAspectRatio: false,
+          layout: {
+            padding: {
+              top: 10,
+              right: 16,
+              bottom: 30,   // room for x-axis label and ticks
+              left: 16
+            }
+          },
           scales: {
             x: {
               type: "linear",
-              title: { display: true, text: "Time (half-lives, T)" },
+              title: {
+                display: true,
+                text: "Time (half-lives, T)",
+                font: { size: 12 }
+              },
+              ticks: {
+                font: { size: 11 }
+              },
               min: 0,
               max: graphTotalHalfLives
             },
             y: {
               type: "linear",
-              title: { display: true, text: "Fraction remaining (N/N₀)" },
+              title: {
+                display: true,
+                text: "Fraction remaining (Parent/Daughter)",
+                font: { size: 12 }
+              },
+              ticks: {
+                font: { size: 11 }
+              },
               min: 0,
               max: 1
             }
           },
           plugins: {
-            legend: { position: "top" }
+            legend: {
+              position: "top",
+              labels: {
+                font: { size: 11 }
+              }
+            }
           }
         }
       });
@@ -771,20 +984,25 @@
       stopLoop();
       reset();
       paintAtoms();
-    }
 
+      resetSegmentTracking();
+      updateFooter();
+
+      updateNuclidePanel();
+    }
 
     function reactionStart() {
       // toggle button state: 0->1 (start), 1->2 (pause), 2->1 (resume)
       switchButton2();
 
       if (bu2.state === 1) {          // Start/Resume
+        startSegment();               // NEW: start counting from here
         decayRunning = true;
-        ensureLoop();                 // make sure RAF is running
+        ensureLoop();
       } else if (bu2.state === 2) {   // Pause
-        decayRunning = false;         // stop advancing decay clock
-        savePoint();                  // keep your “pause point” behavior
-        ensureLoop();                 // keep loop alive to drain particles
+        decayRunning = false;
+        savePoint();
+        ensureLoop();
       }
     }
 
@@ -888,62 +1106,87 @@
     }
 
     function reset() {
-      var halfLifeInput = parseFloat(document.getElementById("HalfLife").value);
-      var xInput = parseInt(document.getElementById("gridX").value, 10);
-      var yInput = parseInt(document.getElementById("gridY").value, 10);
+      var halfLifeVal = parseFloat(document.getElementById("HalfLife").value);
+      var gridXVal = parseInt(document.getElementById("gridX").value, 10);
+      var gridYVal = parseInt(document.getElementById("gridY").value, 10);
 
-      var newHalfLife = (isFinite(halfLifeInput) && halfLifeInput > 0) ? halfLifeInput : 10;
-      halfLife = newHalfLife;
+      halfLife = (Number.isFinite(halfLifeVal) && halfLifeVal > 0) ? halfLifeVal : 10;
+      xAtoms = (Number.isFinite(gridXVal) && gridXVal > 0) ? gridXVal : 20;
+      yAtoms = (Number.isFinite(gridYVal) && gridYVal > 0) ? gridYVal : 20;
 
-      xAtoms = (isFinite(xInput) && xInput > 0) ? xInput : 20;
-      yAtoms = (isFinite(yInput) && yInput > 0) ? yInput : 20;
-
-      // Change colors on first load or whenever half-life is changed
-      if (prevHalfLife === null || newHalfLife !== prevHalfLife) {
+      if (prevHalfLife === null || halfLife !== prevHalfLife) {
         setRandomPalette();
-        prevHalfLife = newHalfLife;
+        prevHalfLife = halfLife;
       }
+
+      // === NEW: compute spacing & radius to fit grid into fixed canvas ===
+      var margin = 40; // px padding on each side
+      var widthAvail = Math.max(10, canvas.width - 2 * margin);
+      var heightAvail = Math.max(10, canvas.height - 2 * margin);
+
+      var spacingX = (xAtoms > 1) ? widthAvail / (xAtoms - 1) : widthAvail;
+      var spacingY = (yAtoms > 1) ? heightAvail / (yAtoms - 1) : heightAvail;
+
+      // uniform cell size so atoms keep their shape
+      spacing = Math.min(spacingX, spacingY, 30);
+
+      atomXPos = (canvas.width - (xAtoms - 1) * spacing) / 2;
+      atomYPos = (canvas.height - (yAtoms - 1) * spacing) / 2;
 
       AtomTotal = xAtoms * yAtoms;
 
-      atomXPos = canvas.width / 2 - (xAtoms - 1) * spacing / 2;
-      graphYPos = yAtoms * 8 - 10;
-      textYPos = 30;
+      // radius as a fraction of spacing
+      atomRadius = Math.max(1, Math.min(spacing * 0.35, 10));
 
-      var randNr;
+      denseMode = (spacing < 3 || atomRadius <= 1.5);
+
+      // === existing decay / schedule / buffer code follows ===
       var f = -halfLife / Math.LN2;
-
-      on = false;
       timeVariable = 0;
-      timeDecay = new Array(AtomTotal);
-      decayed = new Array(AtomTotal);
       number = AtomTotal;
       particles = [];
+      timeDecay = new Array(AtomTotal);
+      decayed = new Array(AtomTotal);
 
       for (var i = 0; i < AtomTotal; i++) {
+        var r;
         do {
-          randNr = Math.random();
-        } while (randNr === 0 || randNr === 1);
-        timeDecay[i] = f * Math.log(randNr);
+          r = Math.random();
+        } while (r === 0 || r === 1);
+        timeDecay[i] = f * Math.log(r);
         decayed[i] = false;
       }
 
-      if (yAtoms * spacing > canvas.height - 50) {
-        canvas.height = 100 + spacing * yAtoms;
+      decaySchedule = new Array(AtomTotal);
+      for (var j = 0; j < AtomTotal; j++) {
+        decaySchedule[j] = { t: timeDecay[j], idx: j };
       }
+      decaySchedule.sort(function (a, b) { return a.t - b.t; });
+      nextDecayIndex = 0;
 
-      // Reset the Chart.js data
       if (graphChart) {
-        graphChart.data.datasets[0].data = [];  // actual
-        // leave ideal dataset as-is; user toggles it
+        graphChart.data.datasets[0].data = [];
         graphChart.update();
       }
 
-      // Add initial point at t = 0, N/N0 = 1
+      if (!atomsBuffer ||
+        atomsBuffer.width !== canvas.width ||
+        atomsBuffer.height !== canvas.height) {
+
+        atomsBuffer = document.createElement("canvas");
+        atomsBuffer.width = canvas.width;
+        atomsBuffer.height = canvas.height;
+        atomsCtx = atomsBuffer.getContext("2d");
+      }
+
+      atomsCtx.fillStyle = colorBackground;
+      atomsCtx.fillRect(0, 0, canvas.width, canvas.height);
+      for (var k = 0; k < AtomTotal; k++) {
+        drawNucleusOn(atomsCtx, k, colorActive);
+      }
+
       savePoint();
     }
-
-
 
     function newPath() {
       ctx.beginPath();
@@ -1055,24 +1298,38 @@
       writePercent("12.5", graphXPos, graphYPos - 8);
     }
 
-    function drawNucleus(i, c) {
+    function drawNucleusOn(targetCtx, i, c) {
       var pos = getNucleusPosition(i);
       var x = pos.x;
       var y = pos.y;
 
-      if (c === colorDecayed) {
-        // decayed: black square
-        ctx.fillStyle = colorDecayed;
-        ctx.fillRect(x - atomRadius, y - atomRadius, atomRadius * 2, atomRadius * 2);
-      } else {
-        // active: solid red circle
-        ctx.fillStyle = colorActive;
-        ctx.beginPath();
-        ctx.strokeStyle = "black";
-        ctx.arc(x, y, atomRadius, 0, 2 * Math.PI);
-        ctx.fill();
-        ctx.stroke();
+      // Dense mode: treat atoms as pixels
+      if (denseMode) {
+        targetCtx.fillStyle = c;
+        // 1x1 pixel (or 2x2 if you want)
+        var px = Math.round(x);
+        var py = Math.round(y);
+        targetCtx.fillRect(px, py, 1, 1);
+        return;
       }
+
+      // Normal mode: circle / square
+      if (c === colorDecayed) {
+        targetCtx.fillStyle = colorDecayed;
+        targetCtx.fillRect(x - atomRadius, y - atomRadius, atomRadius * 2, atomRadius * 2);
+      } else {
+        targetCtx.fillStyle = colorActive;
+        targetCtx.beginPath();
+        targetCtx.strokeStyle = "black";
+        targetCtx.arc(x, y, atomRadius, 0, 2 * Math.PI);
+        targetCtx.fill();
+        targetCtx.stroke();
+      }
+    }
+
+
+    function drawNucleus(i, c) {
+      drawNucleusOn(ctx, i, c);
     }
 
     function paintAtoms() {
@@ -1182,32 +1439,44 @@
     function paintSimulation(dt) {
       dt = dt || 0;
 
-      // Advance decay clock only when not paused
+      // Spawn decays only when decay is running
       if (decayRunning && dt > 0) {
         timeVariable += dt;
-      }
 
-      // Spawn decays only when decay is running
-      if (decayRunning) {
-        for (var i = 0; i < AtomTotal; i++) {
-          if (decayed[i]) continue;
-          if (timeVariable < timeDecay[i]) continue;
-          decayed[i] = true;
-          number--;
-          var pos = getNucleusPosition(i);
-          spawnParticle(pos.x, pos.y);
+        // emit all atoms whose decay time has passed
+        while (nextDecayIndex < AtomTotal &&
+          timeVariable >= decaySchedule[nextDecayIndex].t) {
+
+          var atomIdx = decaySchedule[nextDecayIndex].idx;
+
+          if (!decayed[atomIdx]) {
+            decayed[atomIdx] = true;
+            number--;
+
+            var pos = getNucleusPosition(atomIdx);
+            spawnParticle(pos.x, pos.y);
+
+            // update cached nuclei drawing (see section 2)
+            if (atomsCtx) {
+              drawNucleusOn(atomsCtx, atomIdx, colorDecayed);
+            }
+            playGeiger();
+          }
+
+          nextDecayIndex++;
         }
       }
 
-      // Particles always update & fade, even when paused
       updateParticles(dt);
-
-      // Redraw atoms + particle effects
       renderAtomsAndParticles();
-      // Graph is updated only when we explicitly save points via savePoint()
+      updateFooter();
     }
 
-    document.addEventListener("DOMContentLoaded", start, false);
+    document.addEventListener("DOMContentLoaded", function () {
+      start();
+      initGraphChart();
+      updateNuclidePanel();
+    }, false);
 
     // Isotope side panel (no modal)
     // Isotope side panel (no modal)
@@ -1267,6 +1536,7 @@
       listEl.innerHTML = html;
     }
 
+
     // Wire the button to update the side panel
     var bu4 = document.getElementById("bu4");
     if (bu4) {
@@ -1287,6 +1557,7 @@
       return x.toString();
     }
   </script>
+  <audio id="geigerSound" src="geiger.mp3" preload="auto"></audio>
 </body>
 
 </html>
