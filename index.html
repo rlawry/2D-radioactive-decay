@@ -357,6 +357,12 @@
                 Cloud chamber (show tracks)
               </label>
             </span>
+            <span class="pos1">
+              <label>
+                <input type="checkbox" id="autoPauseHalfLife" checked>
+                Auto-pause at 1 half-life
+              </label>
+            </span>
           </div>
           <div>
             <div>
@@ -388,8 +394,8 @@
           </div>
         </div>
         <div class="nuclide-panel-footer">
-          Uses the current half-life value (seconds). Data from NuDat 2.8 (NNDC) <a href="https://nucleus.iaea.org/"
-            target="_blank">here</a>.
+          Uses the current half-life value (seconds). Data from LiveChart <a href="https://nucleus.iaea.org/"
+            target="_blank">(IAEA.org)</a>.
         </div>
       </aside>
     </div>
@@ -478,11 +484,15 @@
     var particles = [];
     var animFrameId = null;
 
+    var autoPauseHalfLife = false;
+    var autoPauseTriggered = false;
+    var nextAutoPauseTime = null;   // NEW: next T at which to auto-pause
+
     var denseMode = false;  // true when atoms are effectively pixels
 
     var geigerPool = [];
     var geigerPoolIndex = 0;
-    var GEIGER_POOL_SIZE = 8;  // number of overlapping clicks allowed
+    var GEIGER_POOL_SIZE = 10;  // number of overlapping clicks allowed
 
     var footerParentsEl, footerDaughtersEl, footerTimeEl, footerDecayedEl;
 
@@ -833,6 +843,16 @@
         });
       }
 
+      var ap = document.getElementById("autoPauseHalfLife");
+      if (ap) {
+        autoPauseHalfLife = ap.checked;
+        ap.addEventListener("change", function () {
+          autoPauseHalfLife = ap.checked;
+          // when toggled on, allow auto-pause to trigger again
+          autoPauseTriggered = false;
+        });
+      }
+
       // nuclide panel wiring (you already have this)
       if (halfLifeInput) {
         halfLifeInput.addEventListener("input", updateNuclidePanel);
@@ -988,6 +1008,9 @@
       resetSegmentTracking();
       updateFooter();
 
+      autoPauseTriggered = false;
+      nextAutoPauseTime = (halfLife > 0) ? halfLife : null;
+
       updateNuclidePanel();
     }
 
@@ -996,8 +1019,9 @@
       switchButton2();
 
       if (bu2.state === 1) {          // Start/Resume
-        startSegment();               // NEW: start counting from here
+        startSegment();
         decayRunning = true;
+        autoPauseTriggered = false;   // optional; with nextAutoPauseTime it's not critical
         ensureLoop();
       } else if (bu2.state === 2) {   // Pause
         decayRunning = false;
@@ -1038,6 +1062,29 @@
         return;
       }
       rafId = requestAnimationFrame(loopStep);
+    }
+
+    function triggerAutoPause() {
+      if (!decayRunning) return;
+
+      autoPauseTriggered = true;
+
+      // NEW: bump target to the *next* half-life
+      if (halfLife > 0 && nextAutoPauseTime != null) {
+        nextAutoPauseTime += halfLife;   // T -> 2T -> 3T -> ...
+      }
+
+      // put button into the "Pause" state (state 2)
+      setButton2State(2);
+
+      // stop advancing decay clock
+      decayRunning = false;
+
+      // record a graph point just like manual pause
+      savePoint();
+
+      // keep RAF running so particles can finish fading
+      ensureLoop();
     }
 
     function reactionDiagram() {
@@ -1147,6 +1194,9 @@
       particles = [];
       timeDecay = new Array(AtomTotal);
       decayed = new Array(AtomTotal);
+
+      nextAutoPauseTime = (halfLife > 0) ? halfLife : null;
+      autoPauseTriggered = false;
 
       for (var i = 0; i < AtomTotal; i++) {
         var r;
@@ -1315,8 +1365,12 @@
 
       // Normal mode: circle / square
       if (c === colorDecayed) {
+        targetCtx.beginPath();
         targetCtx.fillStyle = colorDecayed;
-        targetCtx.fillRect(x - atomRadius, y - atomRadius, atomRadius * 2, atomRadius * 2);
+        targetCtx.strokeStyle = "black";
+        targetCtx.arc(x, y, atomRadius, 0, 2 * Math.PI);
+        targetCtx.fill();
+        targetCtx.stroke();
       } else {
         targetCtx.fillStyle = colorActive;
         targetCtx.beginPath();
@@ -1442,6 +1496,14 @@
       // Spawn decays only when decay is running
       if (decayRunning && dt > 0) {
         timeVariable += dt;
+
+        if (autoPauseHalfLife &&
+          halfLife > 0 &&
+          nextAutoPauseTime != null &&
+          timeVariable >= nextAutoPauseTime) {
+
+          triggerAutoPause();
+        }
 
         // emit all atoms whose decay time has passed
         while (nextDecayIndex < AtomTotal &&
